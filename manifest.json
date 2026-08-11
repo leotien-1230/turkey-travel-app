@@ -1,0 +1,26 @@
+{
+  "name": "土耳其旅遊小幫手",
+  "short_name": "土耳其之旅",
+  "description": "10 天土耳其經典行程隨身工具：行程、記帳、匯率、旅遊須知",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#152238",
+  "theme_color": "#152238",
+  "lang": "zh-Hant",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%23152238'/%3E%3Ccircle cx='256' cy='256' r='160' fill='none' stroke='%23C79A3C' stroke-width='24'/%3E%3Ccircle cx='256' cy='256' r='90' fill='%2312857F'/%3E%3Ccircle cx='256' cy='256' r='36' fill='%23C79A3C'/%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%23152238'/%3E%3Ccircle cx='256' cy='256' r='160' fill='none' stroke='%23C79A3C' stroke-width='24'/%3E%3Ccircle cx='256' cy='256' r='90' fill='%2312857F'/%3E%3Ccircle cx='256' cy='256' r='36' fill='%23C79A3C'/%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
