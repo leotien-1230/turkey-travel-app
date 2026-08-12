@@ -626,3 +626,343 @@ async function translateViaAPI(text, langPair) {
     if (!result || /MYMEMORY WARNING/i.test(result)) {
       return "（翻譯服務目前忙碌，請稍後再試，或使用下方常用短句）";
     }
+    return result;
+  } catch (e) {
+    console.error("翻譯失敗：", e);
+    if (e.name === "AbortError") return "（翻譯逾時，請確認網路連線後再試一次）";
+    return "（網路異常，無法翻譯，請確認網路連線後再試）";
+  }
+}
+function speakText(text, langCode) {
+  if (!window.speechSynthesis || !text) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text); u.lang = langCode;
+  window.speechSynthesis.speak(u);
+}
+function mapMicError(err) {
+  switch (err.name) {
+    case "NotAllowedError": case "PermissionDeniedError": return "麥克風權限被拒絕。請至瀏覽器或系統設定允許存取麥克風後再試一次。";
+    case "NotFoundError": case "DevicesNotFoundError": return "找不到可用的麥克風裝置，請確認裝置已連接麥克風。";
+    case "NotReadableError": case "TrackStartError": return "麥克風目前被其他應用程式占用，請關閉相關程式後再試一次。";
+    case "SecurityError": return "此頁面未使用安全連線（HTTPS），無法啟用麥克風。";
+    default: return "無法啟動錄音功能，請稍後再試一次。";
+  }
+}
+
+/* ===================== 拍照翻譯 ===================== */
+function renderPhotoTranslate() {
+  const pt = state.photoTranslate;
+  if (!pt.photo) {
+    return `
+      <section class="card">
+        <p class="tool-title" style="color:var(--terracotta)">📷 拍照翻譯</p>
+        <button class="photo-upload-btn" id="photoTranslateBtn">
+          <span class="photo-upload-icon">📷</span>
+          <span>拍攝菜單、招牌或告示牌，立即翻譯成繁體中文</span>
+        </button>
+        <input type="file" id="photoTranslateInput" accept="image/*" capture="environment" style="display:none" />
+      </section>`;
+  }
+  return `
+    <section class="card">
+      <div class="tool-title-row">
+        <p class="tool-title" style="color:var(--terracotta)">📷 拍照翻譯</p>
+        <button class="link-btn" onclick="resetPhotoTranslate()">↺ 重新拍攝</button>
+      </div>
+      <img class="photo-translate-preview" src="${pt.photo}" alt="拍攝的照片" />
+      ${pt.status === "translating" ? `<div class="spinner-row"><span class="spinner"></span><p>翻譯中…</p></div>` : ""}
+      ${pt.status === "done" && pt.result ? `
+        <div class="result-card original">
+          <p class="result-label">📄 原文（偵測為${pt.result.lang} ${pt.result.flag}）</p>
+          <p class="result-text">${pt.result.original}</p>
+        </div>
+        <div class="result-card translated">
+          <p class="result-label" style="color:var(--turquoise)">🌐 繁體中文翻譯結果</p>
+          <p class="result-text">${pt.result.translated}</p>
+        </div>` : ""}
+    </section>`;
+}
+window.resetPhotoTranslate = function () { state.photoTranslate = { photo: null, status: "idle", result: null }; render(); };
+function wirePhotoTranslateEvents() {
+  const btn = document.getElementById("photoTranslateBtn");
+  const input = document.getElementById("photoTranslateInput");
+  if (btn) btn.onclick = () => input.click();
+  if (input) input.onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      state.photoTranslate = { photo: reader.result, status: "translating", result: null };
+      render();
+      setTimeout(() => {
+        state.photoTranslate.result = MOCK_PHOTO_RESULTS[Math.floor(Math.random() * MOCK_PHOTO_RESULTS.length)];
+        state.photoTranslate.status = "done";
+        render();
+      }, 1800);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+}
+
+/* ===================== 即時口語翻譯 ===================== */
+function renderVoiceTranslate() {
+  const vt = state.voiceTranslate;
+  const source = vt.direction === "zh-tr" ? SPEECH_LANGS.zh : SPEECH_LANGS.tr;
+  const target = vt.direction === "zh-tr" ? SPEECH_LANGS.tr : SPEECH_LANGS.zh;
+  const err = vt.errorType ? ERROR_COPY[vt.errorType] : null;
+  return `
+    <section class="card dark">
+      <div class="tool-title-row">
+        <p class="tool-title gold">🎙️ 即時口語翻譯</p>
+        <button class="lang-switch" onclick="toggleVoiceDirection()">${source.label} ⇄ ${target.label}</button>
+      </div>
+      <div class="mic-wrap">
+        <button class="mic-btn ${vt.phase}" onclick="handleVoiceMicClick()">
+          ${vt.phase === "requesting" || vt.phase === "processing" ? '<span class="spinner light"></span>' :
+            vt.phase === "listening" ? '<span class="wave-bars"><span></span><span></span><span></span><span></span><span></span></span>' :
+            vt.phase === "error" ? "🚫" : "🎤"}
+        </button>
+        <p class="mic-hint">
+          ${vt.phase === "idle" ? `按一下，說出${source.label}` : ""}
+          ${vt.phase === "requesting" ? "請求麥克風權限中…" : ""}
+          ${vt.phase === "listening" ? "聆聽中，說完會自動翻譯…（再按一次可提早結束）" : ""}
+          ${vt.phase === "processing" ? "翻譯中…" : ""}
+          ${vt.phase === "error" ? "點麥克風圖示可重新嘗試" : ""}
+        </p>
+      </div>
+      ${err ? `<div class="error-banner"><p class="error-title">${err.title}</p><p class="error-tip">${err.tip}</p></div>` : ""}
+      ${(vt.transcript || vt.translated) ? `
+        <div class="voice-result">
+          <div class="voice-line"><p class="voice-label">你說（${source.label}）</p><p class="voice-text">${vt.transcript}</p></div>
+          <div class="voice-line highlight">
+            <p class="voice-label gold">翻譯結果（${target.label}）</p><p class="voice-text">${vt.translated}</p>
+            ${vt.translated ? `<button class="speak-btn" id="voiceSpeakBtn">🔊</button>` : ""}
+          </div>
+        </div>` : ""}
+      <p class="sandbox-hint">提示：手機瀏覽器（尤其 iOS Safari）可能不支援語音辨識；若無反應請改用下方文字翻譯。</p>
+    </section>`;
+}
+window.toggleVoiceDirection = function () {
+  const vt = state.voiceTranslate;
+  vt.direction = vt.direction === "zh-tr" ? "tr-zh" : "zh-tr";
+  vt.transcript = ""; vt.translated = ""; vt.phase = "idle"; vt.errorType = null;
+  render();
+};
+window.handleVoiceMicClick = function () {
+  if (state.voiceTranslate.phase === "listening") { stopVoiceListening(); return; }
+  startVoiceListening();
+};
+async function startVoiceListening() {
+  const vt = state.voiceTranslate;
+  vt.transcript = ""; vt.translated = ""; vt.errorType = null;
+  if (!window.isSecureContext) { vt.phase = "error"; vt.errorType = "insecure-context"; render(); return; }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { vt.phase = "error"; vt.errorType = "not-supported"; render(); return; }
+  vt.phase = "requesting"; render();
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch (err) {
+    vt.phase = "error";
+    vt.errorType = err.name === "NotAllowedError" || err.name === "PermissionDeniedError" ? "permission-denied"
+      : err.name === "NotFoundError" || err.name === "DevicesNotFoundError" ? "no-mic" : "unknown";
+    render(); return;
+  }
+  stream.getTracks().forEach((t) => t.stop());
+  const source = vt.direction === "zh-tr" ? SPEECH_LANGS.zh : SPEECH_LANGS.tr;
+  const target = vt.direction === "zh-tr" ? SPEECH_LANGS.tr : SPEECH_LANGS.zh;
+  const langPair = vt.direction === "zh-tr" ? "zh-TW|tr" : "tr|zh-TW";
+  const recognition = new SR();
+  recognition.lang = source.code; recognition.interimResults = false; recognition.maxAlternatives = 1;
+  recognition.onstart = () => { vt.phase = "listening"; render(); };
+  recognition.onerror = (e) => {
+    vt.phase = "error";
+    vt.errorType = e.error === "not-allowed" || e.error === "service-not-allowed" ? "permission-denied"
+      : e.error === "no-speech" ? "no-speech" : e.error === "audio-capture" ? "no-mic"
+      : e.error === "network" ? "network" : "unknown";
+    render();
+  };
+  recognition.onresult = async (e) => {
+    const text = e.results[0][0].transcript;
+    vt.transcript = text; vt.phase = "processing"; render();
+    const result = await translateViaAPI(text, langPair);
+    vt.translated = result; vt.phase = "idle"; render();
+    speakText(result, target.code);
+  };
+  recognition.onend = () => { if (vt.phase === "listening") { vt.phase = "idle"; render(); } };
+  voiceRecognition = recognition;
+  recognition.start();
+}
+function stopVoiceListening() { if (voiceRecognition) voiceRecognition.stop(); }
+
+/* ===================== 錄音備忘 ===================== */
+function renderVoiceMemo() {
+  const vm = state.voiceMemo;
+  return `
+    <section class="card">
+      <p class="tool-title" style="color:var(--turquoise)">🎙️ 錄音備忘（例如錄下導遊解說，之後回放）</p>
+      <div class="mic-wrap small">
+        <button class="mic-btn small ${vm.recState}" onclick="handleVoiceMemoClick()">
+          ${vm.recState === "recording" ? '<span class="wave-bars"><span></span><span></span><span></span><span></span><span></span></span>' : vm.recState === "error" ? "🚫" : "🎤"}
+        </button>
+        <p class="mic-hint">
+          ${vm.recState === "idle" ? "按下開始錄音" : ""}
+          ${vm.recState === "recording" ? `錄音中… ${formatSeconds(vm.seconds)}（再按一次停止）` : ""}
+          ${vm.recState === "recorded" ? "錄音完成" : ""}
+          ${vm.recState === "error" ? "點麥克風重試" : ""}
+        </p>
+      </div>
+      ${vm.recState === "error" && vm.errorMsg ? `<div class="error-banner light"><p class="error-title">無法使用麥克風</p><p class="error-tip">${vm.errorMsg}</p></div>` : ""}
+      ${vm.recState === "recorded" && vm.audioURL ? `
+        <audio controls src="${vm.audioURL}" style="width:100%;margin-top:10px;"></audio>
+        <button class="link-btn" onclick="resetVoiceMemo()">↺ 重新錄音</button>` : ""}
+    </section>`;
+}
+function formatSeconds(s) { const m = String(Math.floor(s / 60)).padStart(2, "0"); const ss = String(s % 60).padStart(2, "0"); return `${m}:${ss}`; }
+window.handleVoiceMemoClick = function () {
+  if (state.voiceMemo.recState === "recording") { stopVoiceMemo(); return; }
+  startVoiceMemo();
+};
+async function startVoiceMemo() {
+  const vm = state.voiceMemo; vm.errorMsg = ""; vm.audioURL = null;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    voiceMemoStream = stream;
+    const recorder = new MediaRecorder(stream);
+    voiceMemoRecorder = recorder; voiceMemoChunks = [];
+    recorder.ondataavailable = (e) => { if (e.data.size > 0) voiceMemoChunks.push(e.data); };
+    recorder.onstop = () => {
+      const blob = new Blob(voiceMemoChunks, { type: "audio/webm" });
+      vm.audioURL = URL.createObjectURL(blob); vm.recState = "recorded";
+      voiceMemoStream.getTracks().forEach((t) => t.stop());
+      clearInterval(voiceMemoTimer); render();
+    };
+    recorder.start(); vm.recState = "recording"; vm.seconds = 0; render();
+    voiceMemoTimer = setInterval(() => { vm.seconds++; render(); }, 1000);
+  } catch (err) { vm.errorMsg = mapMicError(err); vm.recState = "error"; render(); }
+}
+function stopVoiceMemo() { if (voiceMemoRecorder) voiceMemoRecorder.stop(); }
+window.resetVoiceMemo = function () { state.voiceMemo = { recState: "idle", errorMsg: "", audioURL: null, seconds: 0 }; render(); };
+
+/* ===================== 文字翻譯／常用短句 ===================== */
+function renderTextTranslate() {
+  const tt = state.textTranslate;
+  const historyHtml = tt.history.map((h) => `
+    <div class="text-history-item">
+      <p class="history-zh">${h.zh}</p><p class="history-tr">${h.tr}</p>
+      ${h.pron ? `<p class="history-pron">發音參考：${h.pron}</p>` : ""}
+    </div>`).join("");
+  return `
+    <section class="card">
+      <p class="tool-title" style="color:var(--turquoise)">🌐 文字翻譯（中文 → 土耳其語）</p>
+      <div class="row">
+        <input id="textTranslateInput" placeholder="輸入想說的中文…" value="${tt.input}" oninput="state.textTranslate.input=this.value" onkeydown="if(event.key==='Enter')submitTextTranslate()" />
+        <button class="btn-add" onclick="submitTextTranslate()">➤</button>
+      </div>
+      ${tt.loading ? '<p class="loading-hint">翻譯中…</p>' : ""}
+      <div class="text-history">${historyHtml}</div>
+    </section>
+    <section class="card">
+      <p class="tool-title" style="color:var(--turquoise)">常用短句（點一下直接翻譯）</p>
+      <div class="phrase-grid">
+        ${PHRASES.map((p, i) => `
+          <button class="phrase-card" onclick="translatePhrase(${i})">
+            <p class="phrase-zh">${p.zh}</p><p class="phrase-tr">${p.tr}</p><p class="phrase-pron">${p.pron}</p>
+          </button>`).join("")}
+      </div>
+    </section>`;
+}
+window.submitTextTranslate = async function () {
+  const tt = state.textTranslate; const text = (tt.input || "").trim();
+  if (!text) return;
+  tt.loading = true; render();
+  const localHit = PHRASES.find((p) => p.zh === text);
+  const result = await translateViaAPI(text, "zh-TW|tr");
+  tt.history.unshift({ zh: text, tr: result, pron: localHit ? localHit.pron : undefined });
+  tt.loading = false; tt.input = ""; render();
+};
+window.translatePhrase = function (i) {
+  const p = PHRASES[i];
+  state.textTranslate.history.unshift({ zh: p.zh, tr: p.tr, pron: p.pron });
+  render();
+};
+
+/* ===================== 匯率換算（強化即時串接） ===================== */
+function renderCurrencySection() {
+  const amountUSD = (parseFloat(state.amount) || 0) / (state.rates[state.base] || 1);
+  const rows = CURRENCIES.filter((c) => c !== state.base).map((c) => {
+    const value = amountUSD * (state.rates[c] || 0);
+    const meta = CURRENCY_META[c];
+    const formatted = value.toLocaleString("en-US", { minimumFractionDigits: meta.decimals, maximumFractionDigits: meta.decimals });
+    return `<button class="currency-row" onclick="switchBase('${c}', ${value})"><span class="currency-left"><span class="code">${c}</span>${meta.name}</span><span class="currency-val">${meta.symbol} ${formatted}</span></button>`;
+  }).join("");
+  const options = CURRENCIES.map((c) => `<option value="${c}" ${state.base === c ? "selected" : ""}>${c}</option>`).join("");
+
+  return `
+    <div class="card">
+      <h2>💱 匯率換算 <span class="rate-badge ${state.rateSource === "live" ? "live" : ""}">${state.rateLoading ? "更新中…" : state.rateSource === "live" ? "即時匯率" : "離線估算匯率"}</span></h2>
+      <div class="row">
+        <input id="currencyAmountInput" type="number" value="${state.amount}" oninput="state.amount=this.value; render();" placeholder="輸入金額" />
+        <select onchange="state.base=this.value; render();">${options}</select>
+      </div>
+      ${rows}
+      <div class="rate-meta-row">
+        <span class="rate-updated">${state.rateUpdatedAt ? "最後更新：" + state.rateUpdatedAt : "尚未取得即時匯率"}</span>
+        <button class="refresh-btn" onclick="fetchLiveRates()">🔄 重新整理匯率</button>
+      </div>
+      <p style="font-size:10px;color:#94897a;margin-top:6px;">點任一貨幣可切換為輸入基準。匯率僅供參考，實際請以當地兌換或刷卡當下匯率為準。</p>
+    </div>`;
+}
+window.switchBase = function (code, value) {
+  state.base = code;
+  state.amount = value > 0 ? value.toFixed(CURRENCY_META[code].decimals) : "0";
+  render();
+};
+window.fetchLiveRates = async function () {
+  state.rateLoading = true;
+  if (state.tab === "tools") render();
+  try {
+    const res = await fetchWithTimeout(RATE_API_URL, 8000);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    if (data && data.result === "success" && data.rates) {
+      const merged = { ...MOCK_RATES_USD_BASE };
+      CURRENCIES.forEach((c) => { if (data.rates[c]) merged[c] = data.rates[c]; });
+      state.rates = merged; state.rateSource = "live";
+      state.rateUpdatedAt = new Date().toLocaleString("zh-TW", { hour12: false });
+    }
+  } catch (e) {
+    console.error("匯率 API 讀取失敗，維持離線估算匯率：", e);
+  } finally {
+    state.rateLoading = false;
+    if (state.tab === "tools") render();
+  }
+};
+
+/* ===================== 工具分頁組合 ===================== */
+function renderTools() {
+  return renderPhotoTranslate() + renderVoiceTranslate() + renderVoiceMemo() + renderTextTranslate() + renderCurrencySection();
+}
+function wireToolsEvents() {
+  wirePhotoTranslateEvents();
+  const speakBtn = document.getElementById("voiceSpeakBtn");
+  if (speakBtn) speakBtn.onclick = () => {
+    const vt = state.voiceTranslate;
+    const target = vt.direction === "zh-tr" ? SPEECH_LANGS.tr : SPEECH_LANGS.zh;
+    speakText(vt.translated, target.code);
+  };
+}
+
+/* ===================== 須知 ===================== */
+function renderNotes() {
+  return NOTES.map((n) => `
+    <div class="card">
+      <h2 style="color:var(--terracotta);">${n.icon} ${n.title}</h2>
+      <ul class="note-list">${n.items.map((i) => `<li>${i}</li>`).join("")}</ul>
+    </div>`).join("");
+}
+
+/* ===================== 啟動 ===================== */
+render();
+fetchLiveRates();
+fetchWeather();
