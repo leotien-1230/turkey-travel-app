@@ -19,7 +19,10 @@ main#content { flex: 1; padding: 16px 16px 90px; }
 .card h2 { font-size: 13px; font-weight: 600; margin: 0 0 10px; color: var(--turquoise); display: flex; align-items: center; gap: 6px; }
 .card.dark { background: linear-gradient(160deg, var(--night), var(--night-soft)); border: none; color: #fff; }
 
-/* 天氣 / 熱氣球 */
+/* 天氣 / 目前位置 / 熱氣球 */
+.current-location-weather { margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+.locate-weather-btn { flex: 1; background: var(--sand); border: 1px dashed var(--sand-deep); border-radius: 10px; padding: 9px; font-size: 12px; color: #6b6154; cursor: pointer; }
+.weather-chip.current { background: var(--turquoise-soft); color: var(--turquoise); font-weight: 600; flex: 1; }
 .weather-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
 .weather-chip { display: flex; justify-content: space-between; background: var(--sand); border-radius: 10px; padding: 6px 10px; font-size: 12px; }
 .loading-hint { font-size: 11px; color: #94897a; }
@@ -117,7 +120,8 @@ input, select { border: 1px solid var(--sand-deep); border-radius: 10px; padding
 .photo-cell.loaded .photo-placeholder { display: none; }
 .photo-cell.error .photo-placeholder { background: linear-gradient(135deg, var(--terracotta-soft), var(--sand-deep)); }
 .photo-cell.error img { display: none; }
-.photo-new { position: absolute; top: 4px; right: 4px; z-index: 2; background: var(--terracotta); color: #fff; font-size: 8px; padding: 1px 6px; border-radius: 999px; font-weight: 600; }
+.photo-new { position: absolute; top: 4px; left: 4px; z-index: 2; background: var(--terracotta); color: #fff; font-size: 8px; padding: 1px 6px; border-radius: 999px; font-weight: 600; }
+.photo-delete { position: absolute; top: 4px; right: 4px; z-index: 3; width: 20px; height: 20px; border-radius: 50%; border: none; background: rgba(0,0,0,.55); color: #fff; font-size: 11px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .photo-caption { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; padding: 14px 6px 4px; font-size: 9px; color: #fff; background: linear-gradient(to top, rgba(0,0,0,.75), transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.9); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
 .lightbox.open { display: flex; }
@@ -164,6 +168,8 @@ input, select { border: 1px solid var(--sand-deep); border-radius: 10px; padding
 .checklist-text { flex: 1; font-size: 13px; color: var(--ink); }
 .checklist-text.done { color: #c7bfae; text-decoration: line-through; }
 .checklist-delete { background: none; border: none; color: #cbbfa8; cursor: pointer; font-size: 13px; }
+.checklist-add-category-row { margin-top: 4px !important; }
+.checklist-add-category-row input { font-size: 12px; }
 
 /* tools */
 .tool-title { font-size: 12.5px; font-weight: 600; margin: 0 0 10px; display: flex; align-items: center; gap: 6px; }
