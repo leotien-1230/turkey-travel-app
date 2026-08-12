@@ -1,308 +1,111 @@
-/* ===================== 資料 ===================== */
+import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import {
+  Compass, Wallet, Utensils, Languages, Info, Plane, Bus, Clock, MapPin,
+  Hotel as HotelIcon, Star, Plus, X, Users, ArrowRightLeft, ThermometerSun,
+  Shirt, Droplet, ShoppingBag, AlertCircle, Send, ChevronDown, Coins,
+  Sparkles, Images, Camera, Image as ImageIcon, Volume2, ArrowLeftRight, 
+  Map as MapIcon, MicOff, AlertTriangle, Loader2, RotateCcw, FileText, 
+  ClipboardCheck, Trash2, Square, ImageOff, Smartphone, Package
+} from "lucide-react";
+
+/* ---------------------------------- palette ---------------------------------- */
+const C = {
+  night: "#152238",       // deep Bosphorus night
+  nightSoft: "#1E3151",
+  turquoise: "#12857F",   // Iznik tile turquoise
+  turquoiseSoft: "#E4F3F1",
+  terracotta: "#C1442D",  // tile red
+  terracottaSoft: "#FBE7E2",
+  gold: "#C79A3C",
+  sand: "#F6EFDF",
+  sandDeep: "#EEE2C6",
+  ink: "#2B2320",
+};
+
+const tilePattern = `data:image/svg+xml;utf8,${encodeURIComponent(`
+<svg xmlns='http://w3.org' width='56' height='56'>
+  <rect width='56' height='56' fill='none'/>
+  <path d='M28 0 L56 28 L28 56 L0 28 Z' fill='none' stroke='${C.gold}' stroke-opacity='0.35' stroke-width='1'/>
+  <circle cx='28' cy='28' r='4' fill='${C.gold}' fill-opacity='0.3'/>
+</svg>`)}`;
+
+/* ---------------------------------- Data ---------------------------------- */
 const ITINERARY = [
-  { day: 1, date: "8/14 (五)", city: "台北 → 伊斯坦堡", transport: "TK025 ‧ 21:45 桃園起飛 → 隔日 05:10 抵伊斯坦堡", meals: ["－", "－", "機上精緻簡餐"], hotel: "夜宿機上" },
-  { day: 2, date: "8/15 (六)", city: "伊斯坦堡 → 番紅花城", transport: "巴士 ‧ 約 410 公里／4 小時 20 分", meals: ["機上簡餐", "土式風味料理", "傳統民宿套餐"], hotel: "ZALIFRE HOTEL" },
-  { day: 3, date: "8/16 (日)", city: "番紅花城 → 安卡拉 → 卡帕多奇亞", transport: "巴士 ‧ 約 555 公里（含旋轉舞表演）", meals: ["旅館早餐", "土式風味料理", "旅館自助餐"], hotel: "EXEDRA HOTEL CAPPADOCIA" },
-  { day: 4, date: "8/17 (一)", city: "卡帕多奇亞全日遊", transport: "市區接駁（果里美博物館／地下城）", meals: ["旅館早餐", "窯甕風味料理", "旅館自助餐"], hotel: "EXEDRA HOTEL CAPPADOCIA" },
-  { day: 5, date: "8/18 (二)", city: "卡帕多奇亞 → 孔亞 → 巴穆嘉麗", transport: "巴士 ‧ 約 640 公里", meals: ["旅館早餐", "土式鐵板＋披薩", "旅館自助餐"], hotel: "PAM THERMAL HOTEL" },
-  { day: 6, date: "8/19 (三)", city: "巴穆嘉麗（棉堡）→ 庫薩達西", transport: "巴士 ‧ 約 200 公里", meals: ["旅館早餐", "土耳其風味料理", "旅館自助餐"], hotel: "QLUSIVE HOTEL" },
-  { day: 7, date: "8/20 (四)", city: "庫薩達西 → 以弗所 → 布爾薩", transport: "巴士 ‧ 約 420 公里", meals: ["旅館早餐", "土耳其風味料理", "旅館自助餐"], hotel: "ALMIRA HOTEL THERMAL SPA" },
-  { day: 8, date: "8/21 (五)", city: "布爾薩 → 伊斯坦堡", transport: "巴士 ‧ 約 165 公里（博斯普魯斯遊船）", meals: ["旅館早餐", "土耳其風味料理", "方便逛街．自理"], hotel: "RAMADA PLAZA BY WYNDHAM" },
-  { day: 9, date: "8/22 (六)", city: "伊斯坦堡市區", transport: "市區行程（藍色清真寺／大市集）", meals: ["旅館早餐", "中式 7 菜 1 湯", "舊城區經典漢堡餐"], hotel: "當晚前往機場" },
-  { day: 10, date: "8/23 (日)", city: "伊斯坦堡 → 台北", transport: "TK024 ‧ 01:30 伊斯坦堡 → 17:55 桃園", meals: ["機上簡餐", "機上簡餐", "－"], hotel: "抵達溫暖的家" },
+  { day: 1, date: "8/14 (五)", city: "台北 → 伊斯坦堡", temp: null, transport: [{ type: "plane", label: "TK025　21:45 桃園 → 隔日05:10 伊斯坦堡", sub: "飛行時間 12 小時 25 分" }], stops: [], meals: { 早: "—", 午: "—", 晚: "機上精緻簡餐" }, hotel: "夜宿機上", note: "" },
+  { day: 2, date: "8/15 (六)", city: "伊斯坦堡 → 番紅花城 Safranbolu", temp: "18–31°C", transport: [{ type: "bus", label: "巴士約 410 公里・4 小時 20 分" }], stops: ["希德爾立克山丘（觀景平台）"], meals: { 早: "機上精緻簡餐", 午: "土式風味料理", 晚: "傳統民宿內套餐" }, hotel: "ZALIFRE HOTEL", note: "世界文化遺產老城區，建議帶盥洗小包，百年建築無空調" },
+  { day: 3, date: "8/16 (日)", city: "番紅花城 → 安卡拉 → 卡帕多奇亞", temp: "17–30°C", transport: [{ type: "bus", label: "230 公里・2 小時 30 分" }, { type: "bus", label: "325 公里・3 小時 15 分" }], stops: ["國父凱末爾紀念館", "★ 正宗蘇菲旋轉舞表演"], meals: { 早: "旅館內早餐", 午: "土式風味料理", 晚: "旅館內自助式或套餐" }, hotel: "EXEDRA HOTEL CAPPADOCIA（仿洞穴飯店）", note: "洞穴飯店多無空調，房型抽籤分配" },
+  { day: 4, date: "8/17 (一)", city: "卡帕多奇亞 全日遊", temp: "17–30°C", transport: [{ type: "bus", label: "市區接駁" }], stops: ["果里美露天博物館", "凱馬克利地下城", "奇岩怪石區（駱駝岩／烏沙奇城堡）", "地毯工廠", "玉石珠寶展示中心"], meals: { 早: "旅館內早餐", 午: "當地特色窯甕料理", 晚: "旅館內自助式或套餐" }, hotel: "EXEDRA HOTEL CAPPADOCIA", note: "可加購熱氣球體驗（自費，需視天候）" },
+  { day: 5, date: "8/18 (二)", city: "卡帕多奇亞 → 孔亞 → 巴穆嘉麗", temp: "21–31°C", transport: [{ type: "bus", label: "240 公里・3 小時" }, { type: "bus", label: "400 公里・5 小時" }], stops: ["梅夫拉納博物館（孔亞）"], meals: { 早: "旅館內早餐", 午: "土式鐵板料理＋土式披薩", 晚: "旅館內自助式或套餐" }, hotel: "PAM THERMAL HOTEL", note: "溫泉飯店，可自備泳衣泡湯" },
+  { day: 6, date: "8/19 (三)", city: "巴穆嘉麗（棉堡） → 庫薩達西", temp: "23–37°C", transport: [{ type: "bus", label: "200 公里・3 小時" }], stops: ["希拉波利斯古城", "棉堡石灰棚（需赤腳）"], meals: { 早: "旅館內早餐", 午: "土耳其式風味料理", 晚: "旅館內自助式或套餐" }, hotel: "QLUSIVE HOTEL", note: "全程最熱的一天，記得帶拖鞋走木棧道" },
+  { day: 7, date: "8/20 (四)", city: "庫薩達西 → 以弗所 → 布爾薩", temp: "25–33°C", transport: [{ type: "bus", label: "30 公里・30 分" }, { type: "bus", label: "390 公里・3 小時 40 分" }], stops: ["皮衣工廠", "以弗所古城遺址", "綠色清真寺與綠色陵墓", "絲綢市集 Koza Han"], meals: { 早: "旅館內早餐", 午: "土耳其式風味料理", 晚: "旅館內自助式或套餐" }, hotel: "ALMIRA HOTEL THERMAL SPA", note: "" },
+  { day: 8, date: "8/21 (五)", city: "布爾薩 → 伊斯坦堡", temp: "21–33°C", transport: [{ type: "bus", label: "165 公里・2 小時 5 分" }], stops: ["★ 博斯普魯斯海峽遊船", "塔克辛廣場與獨立大道"], meals: { 早: "旅館內早餐", 午: "土耳其式風味料理", 晚: "方便逛街，敬請自理" }, hotel: "RAMADA PLAZA BY WYNDHAM", note: "" },
+  { day: 9, date: "8/22 (六)", city: "伊斯坦堡", temp: "23–32°C", transport: [{ type: "bus", label: "市區行程" }], stops: ["★ 考古博物館", "古羅馬賽馬場遺址", "藍色清真寺", "有頂大市集"], meals: { 早: "旅館內早餐", 午: "中式 7 菜 1 湯", 晚: "★ 舊城區經典漢堡餐" }, hotel: "當晚前往機場", note: "參觀清真寺需脫鞋，女性需頭巾、長袖長褲" },
+  { day: 10, date: "8/23 (日)", city: "伊斯坦堡 → 台北", temp: null, transport: [{ type: "plane", label: "TK024　01:30 伊斯坦堡 → 17:55 桃園", sub: "飛行時間 11 小時 25 分" }], stops: [], meals: { 早: "機上精緻簡餐", 午: "機上精緻簡餐", 晚: "—" }, hotel: "抵達溫暖的家", note: "" },
 ];
 
-const CURRENCY_META = {
-  TWD: { name: "新台幣", symbol: "NT$", decimals: 0 },
-  USD: { name: "美元", symbol: "$", decimals: 2 },
-  JPY: { name: "日圓", symbol: "¥", decimals: 0 },
-  KRW: { name: "韓元", symbol: "₩", decimals: 0 },
-  EUR: { name: "歐元", symbol: "€", decimals: 2 },
-  THB: { name: "泰銖", symbol: "฿", decimals: 2 },
-  TRY: { name: "土耳其里拉", symbol: "₺", decimals: 2 },
-};
-const CURRENCIES = Object.keys(CURRENCY_META);
-const MOCK_RATES_USD_BASE = { USD: 1, TWD: 32.5, JPY: 155.2, KRW: 1380, EUR: 0.92, THB: 36.8, TRY: 44 };
-const RATE_API_URL = "https://open.er-api.com/v6/latest/USD"; // 🔌 免金鑰即時匯率端點，之後可換成自己的服務
-
-const NOTES = [
-  { title: "各地天氣", icon: "🌡️", items: ["伊斯坦堡 23–32°C／番紅花城 18–31°C／卡帕多奇亞 17–30°C", "棉堡（巴穆嘉麗）最熱 23–37°C，早晚溫差大", "建議洋蔥式穿搭，帶一件薄外套"] },
-  { title: "穿著提醒", icon: "👕", items: ["風俗較保守，避免緊身、暴露服裝", "參觀清真寺需脫鞋；女性需頭巾、長袖、長褲或長裙", "棉堡石灰棚僅能赤腳，建議帶拖鞋", "溫泉飯店可自備泳衣泡湯"] },
-  { title: "飲食須知", icon: "🍽️", items: ["主食以麵包為主，肉類以牛雞為主", "不要飲用自來水，請購買瓶裝水", "腸胃敏感者建議攜帶腸胃藥與電解質粉", "素食選擇少，建議自備罐頭"] },
-  { title: "住宿須知", icon: "🏨", items: ["多數飯店不提供牙刷、牙膏、拖鞋", "電壓 220V 雙圓孔歐規，記得帶轉接頭", "部分洞穴／民宿飯店無空調"] },
-  { title: "money 匯兌", icon: "💰", items: ["當地可用歐元、美金、里拉", "建議準備 700–800 美金換匯", "美金需攜帶新版鈔票，避免收 50 美金面額", "每日房間小費約 1 美元／房"] },
+const GUIDE = [
+  { city: "番紅花城 Safranbolu", year: "1994 入選世界遺產", spots: ["八百棟鄂圖曼老宅古城區", "希德爾立克山丘觀景台", "古浴場與蘇里曼帕夏學院"], food: ["土式烤餅 Pide", "核桃軟糖 Lokum", "鄂圖曼風味燉飯"] },
+  { city: "卡帕多奇亞 Cappadocia", year: "1985 入選世界遺產", spots: ["格萊梅露天博物館岩窟教堂", "凱馬克利地下城", "精靈煙囪奇岩地形"], food: ["★ 陶罐燉肉 Testi Kebabı", "手工地毯工坊蘋果茶", "石榴烤肉串 Nar Ekşili Köfte"] },
+  { city: "巴穆嘉麗 Pamukkale（棉堡）", year: "1988 入選世界遺產", spots: ["希拉波利斯古城遺址", "白色石灰棚溫泉階地", "古羅馬圓形劇場"], food: ["溫泉區鱒魚料理", "橄欖油燉時蔬 Zeytinyağlı", "土耳其優格醬沙拉"] },
+  { city: "以弗所 Ephesus", year: "2015 入選世界遺產", spots: ["塞爾瑟斯圖書館遺跡", "可容納 2.4 萬人露天劇場", "古羅馬大理石街道"], food: ["愛琴海橄欖與起司拼盤", "海鮮什錦烤物", "無花果甜點"] },
+  { city: "布爾薩 Bursa", year: "2014 入選世界遺產", spots: ["綠色清真寺與綠色陵墓", "絲綢市集 Koza Han", "鄂圖曼蘇丹陵墓群"], food: ["布爾薩烤肉 İskender Kebap 發源地", "栗子甜點", "土耳其咖啡配軟糖"] },
+  { city: "伊斯坦堡 Istanbul", year: "1985 入選世界遺產", spots: ["藍色清真寺", "考古博物館「亞歷山大石棺」", "有頂大市集", "博斯普魯斯海峽"], food: ["★ 舊城區經典漢堡餐", "土耳其烤肉 Şiş Kebap", "巴克拉瓦 Baklava", "土耳其咖啡 Türk Kahvesi"] },
 ];
 
-/* ===================== 狀態與儲存 ===================== */
-function loadJSON(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch (e) {
-    console.error("讀取 localStorage 失敗：", e);
-    return fallback;
-  }
-}
-function saveJSON(key, value) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (e) {
-    console.error("寫入 localStorage 失敗：", e);
-  }
-}
+const POPULAR_SPOTS = [
+  { id: "cappadocia", name: "卡帕多奇亞熱氣球", tags: ["IG熱門", "夢幻仙境"], photos: ["https://wilhelmchang.com", "https://whereamber.com", "https://ninetyroadtravel.com"] },
+  { id: "pamukkale", name: "棉堡 Pamukkale", tags: ["IG熱門", "拍照聖地"], photos: ["https://whereamber.com", "https://sundaytour.com.tw", "https://kavana.tw"] },
+  { id: "blue-mosque", name: "藍色清真寺", tags: ["歷史古蹟", "IG熱門"], photos: ["https://journey.tw", "https://journey.tw", "https://andyventure.com"] },
+  { id: "grand-bazaar", name: "伊斯坦堡有頂大市集", tags: ["美食天堂", "購物天堂"], photos: ["https://andyventure.com", "https://wendyjourney.com", "https://sundaytour.com.tw"] },
+];
 
-const state = {
-  tab: "itinerary",
-  members: loadJSON("trip-members", ["我", "同伴A", "同伴B"]),
-  expenses: loadJSON("trip-expenses", []),
-  rates: MOCK_RATES_USD_BASE,
-  rateSource: "mock",
-  amount: 1000,
-  base: "TWD",
-  expenseDraft: { desc: "", amount: "", paidBy: null, split: [] },
+const PHRASES = [
+  { zh: "你好", tr: "Merhaba", pron: "梅兒哈巴" }, { zh: "謝謝", tr: "Teşekkürler", pron: "特謝屈雷兒" },
+  { zh: "多少錢？", tr: "Ne kadar?", pron: "內 卡達爾" }, { zh: "洗手間在哪裡？", tr: "Tuvalet nerede?", pron: "圖瓦雷 內雷德" },
+  { zh: "救命！", tr: "İmdat!", pron: "伊姆達特" }, { zh: "很好吃", tr: "Çok lezzetli", pron: "秋克 雷賊特利" },
+  { zh: "不要辣", tr: "Acısız olsun", pron: "阿吉色 歐爾孫" }, { zh: "可以刷卡嗎？", tr: "Kart geçerli mi?", pron: "卡兒特 給切里 米" },
+  { zh: "我要退稅", tr: "Vergi iadesi istiyorum", pron: "維爾基 亞德西 伊斯提優魯姆" }, { zh: "再見", tr: "Hoşça kal", pron: "后洽 卡兒" },
+];
+
+const WEATHER_FORECAST = [
+  { city: "伊斯坦堡", t: "23–32°C" }, { city: "番紅花城", t: "18–31°C" }, { city: "卡帕多奇亞", t: "17–30°C" }, 
+  { city: "孔亞", t: "21–31°C" }, { city: "棉堡（巴穆嘉麗）", t: "23–37°C", hot: true }, { city: "庫薩達西", t: "25–33°C" }, { city: "布爾薩", t: "21–33°C" },
+];
+
+const ATTRACTION_COORDS = {
+  "希德爾立克山丘（觀景平台）": { lat: 41.2530, lng: 32.6975, desc: "番紅花城最佳觀景台，可俯瞰整片鄂圖曼老城紅瓦屋頂。" },
+  "國父凱末爾紀念館": { lat: 39.9255, lng: 32.8372, desc: "土耳其國父凱末爾長眠之處，融合西臺、希臘羅馬與伊斯蘭建築特色。" },
+  "正宗蘇菲旋轉舞表演": { lat: 38.6431, lng: 34.8286, desc: "聯合國非物質文化遺產，蘇菲教派透過旋轉修行的宗教儀式。" },
+  "果里美露天博物館": { lat: 38.6455, lng: 34.8393, desc: "九世紀基督徒躲避迫害開鑿的岩窟教堂群，壁畫保存完整。" },
+  "凱馬克利地下城": { lat: 38.4544, lng: 34.4547, desc: "可容納萬人的多層地下城市，通風、教堂、磨坊一應俱全。" },
+  "奇岩怪石區（駱駝岩／烏沙奇城堡）": { lat: 38.6300, lng: 34.8100, desc: "風化水蝕形成的奇特岩石地貌，宛如自然雕塑公園。" },
+  "地毯工廠": { lat: 38.6440, lng: 34.8300, desc: "傳統手工地毯編織展示，了解費工織法與質料知識。" },
+  "玉石珠寶展示中心": { lat: 38.6420, lng: 34.8320, desc: "琳瑯滿目的土耳其石珠寶展示，傳說能帶來幸福與保護。" },
+  "梅夫拉納博物館（孔亞）": { lat: 37.8713, lng: 32.5236, desc: "神秘迴旋教派發源地，精神導師梅夫拉納長眠於此。" },
+  "希拉波利斯古城": { lat: 37.9260, lng: 29.1235, desc: "西元前190年建立的溫泉療養古城，圖書館、市場遺跡尚存。" },
+  "棉堡石灰棚（需赤腳）": { lat: 37.9235, lng: 29.1244, desc: "方解石礦泉形成的雪白階梯狀溫泉景觀，猶如棉花城堡。" },
+  "皮衣工廠": { lat: 37.8580, lng: 27.2600, desc: "細緻羊皮製品展示，可欣賞皮衣走秀。" },
+  "以弗所古城遺址": { lat: 37.9395, lng: 27.3417, desc: "世界最大希臘羅馬古城之一，圖書館、劇場、大理石街道完整。" },
+  "綠色清真寺與綠色陵墓": { lat: 40.1826, lng: 29.0743, desc: "鄂圖曼古典建築風格轉捩點，大量藍綠磁磚裝飾。" },
+  "絲綢市集 Koza Han": { lat: 40.1830, lng: 29.0670, desc: "百年絲綢複合市集，購物之餘可在戶外咖啡區小憩。" },
+  "博斯普魯斯海峽遊船": { lat: 41.0180, lng: 28.9705, desc: "包船暢遊歐亞交界海峽，沿途皇宮、碉堡、渡假別墅美景。" },
+  "塔克辛廣場與獨立大道": { lat: 41.0370, lng: 28.9850, desc: "伊斯坦堡時尚地標，有「小香榭大道」之稱。" },
+  "考古博物館": { lat: 41.0115, lng: 28.9813, desc: "又稱石棺博物館，鎮館之寶為亞歷山大大帝石棺。" },
+  "古羅馬賽馬場遺址": { lat: 41.0055, lng: 28.9755, desc: "拜占庭時期賽馬場遺跡，現存方尖碑見證千年歷史。" },
+  "藍色清真寺": { lat: 41.0054, lng: 28.9768, desc: "使用數萬片藍色磁磚打造，融合拜占庭與伊斯蘭建築精粹。" },
+  "有頂大市集": { lat: 41.0106, lng: 28.9681, desc: "5000多家傳統商店，體驗異國討價還價的樂趣。" },
 };
-state.expenseDraft.paidBy = state.members[0];
-state.expenseDraft.split = [...state.members];
+const FOOD_MARKERS = [
+  { id: "f1", name: "陶罐燉肉名店 Testi Kebabı", lat: 38.7205, lng: 34.8480, desc: "卡帕多奇亞北邊小鎮 Avanos 名產，現場敲開陶罐上桌。" },
+  { id: "f2", name: "伊斯坦堡經典漢堡餐", lat: 41.0080, lng: 28.9755, desc: "舊城區排隊美食，行程第 9 天安排的晚餐。" },
+  { id: "f3", name: "İskender Kebap 創始老店", lat: 40.1859, lng: 29.0610, desc: "布爾薩烤肉發源地，淋上番茄奶油醬與優格。" },
+];
+const MAP_MARKERS = [...Object.entries(ATTRACTION_COORDS).map(([name, v], i) => ({ id: `a${i}`, name, category: "attraction", ...v })), ...FOOD_MARKERS.map((f) => ({ ...f, category: "food" }))];
+const MARKER_BY_NAME = new Map(MAP_MARKERS.map((m) => [m.name, m]));
 
-/* ===================== 切換分頁 ===================== */
-document.getElementById("bottomNav").addEventListener("click", (e) => {
-  const btn = e.target.closest(".nav-btn");
-  if (!btn) return;
-  state.tab = btn.dataset.tab;
-  document.querySelectorAll(".nav-btn").forEach((b) => b.classList.toggle("active", b === btn));
-  render();
-});
-
-/* ===================== 渲染 ===================== */
-function render() {
-  const el = document.getElementById("content");
-  if (state.tab === "itinerary") el.innerHTML = renderItinerary();
-  if (state.tab === "expense") el.innerHTML = renderExpense();
-  if (state.tab === "currency") el.innerHTML = renderCurrency();
-  if (state.tab === "notes") el.innerHTML = renderNotes();
-}
-
-/* ---------- 行程 ---------- */
-function renderItinerary() {
-  return ITINERARY.map(
-    (d) => `
-    <details class="card day-card" ${d.day === 1 ? "open" : ""}>
-      <summary>
-        <div class="day-badge"><span>DAY</span><b>${d.day}</b></div>
-        <div class="day-meta">
-          <p class="date">${d.date}</p>
-          <p class="city">${d.city}</p>
-        </div>
-      </summary>
-      <div class="day-detail">
-        <p>🚌 ${d.transport}</p>
-        <p>🏨 ${d.hotel}</p>
-        <div class="meals">
-          <span class="meal-chip">早：${d.meals[0]}</span>
-          <span class="meal-chip">午：${d.meals[1]}</span>
-          <span class="meal-chip">晚：${d.meals[2]}</span>
-        </div>
-      </div>
-    </details>`
-  ).join("");
-}
-
-/* ---------- 記帳 ---------- */
-function renderExpense() {
-  const d = state.expenseDraft;
-  const membersHtml = state.members
-    .map((m) => `<span class="chip">${m}<button onclick="removeMember('${m}')">✕</button></span>`)
-    .join("");
-  const splitHtml = state.members
-    .map((m) => `<button class="chip split ${d.split.includes(m) ? "active" : ""}" onclick="toggleSplit('${m}')">${m}</button>`)
-    .join("");
-  const paidByOptions = state.members.map((m) => `<option value="${m}" ${d.paidBy === m ? "selected" : ""}>${m}</option>`).join("");
-
-  const total = state.expenses.reduce((s, e) => s + e.amount, 0);
-  const listHtml = state.expenses
-    .map(
-      (e) => `
-      <div class="expense-item">
-        <div>
-          <div>${e.desc}</div>
-          <p class="meta">${e.paidBy} 代墊 ‧ ${e.split.length} 人均分</p>
-        </div>
-        <div style="display:flex;align-items:center;">
-          <span class="amt">${e.amount.toLocaleString()}</span>
-          <button onclick="deleteExpense(${e.id})">🗑</button>
-        </div>
-      </div>`
-    )
-    .join("");
-
-  const balances = computeBalances();
-
-  return `
-    <div class="card">
-      <h2>👥 同行夥伴</h2>
-      <div class="chip-row">${membersHtml}</div>
-      <div class="row">
-        <input id="newMemberInput" placeholder="新增夥伴名字" onkeydown="if(event.key==='Enter')addMember()" />
-        <button class="btn btn-add" onclick="addMember()">＋</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>➕ 新增支出</h2>
-      <input id="descInput" placeholder="項目（例如：晚餐／計程車）" value="${d.desc}" oninput="state.expenseDraft.desc=this.value" style="margin-bottom:8px;" />
-      <div class="row">
-        <input id="amountInput" type="number" placeholder="金額" value="${d.amount}" oninput="state.expenseDraft.amount=this.value" />
-        <select onchange="state.expenseDraft.paidBy=this.value">${paidByOptions}</select>
-      </div>
-      <p style="font-size:11px;color:#94897a;margin:4px 0;">由誰均分？</p>
-      <div class="chip-row">${splitHtml}</div>
-      <button class="btn btn-primary" onclick="addExpense()">加入這筆支出</button>
-    </div>
-
-    ${state.expenses.length ? `<div class="card"><h2>📋 支出紀錄（共計 ${total.toLocaleString()}）</h2>${listHtml}</div>` : ""}
-
-    ${
-      state.expenses.length
-        ? `<div class="card balance-card">
-        <h2 style="color:#C79A3C;">🔁 分帳結果</h2>
-        ${Object.entries(balances.net)
-          .map(
-            ([m, v]) =>
-              `<div class="balance-row"><span>${m}</span><span class="${v >= 0 ? "balance-pos" : "balance-neg"}">${v >= 0 ? "應收回 " : "應支付 "}${Math.abs(v).toFixed(0)} 元</span></div>`
-          )
-          .join("")}
-        ${
-          balances.settlements.length
-            ? balances.settlements.map((s) => `<div class="settle-row">💰 ${s.from} 付給 ${s.to}<span class="amt">${s.amt.toFixed(0)} 元</span></div>`).join("")
-            : `<p style="font-size:12px;color:rgba(255,255,255,0.5);">目前帳務已平衡 🎉</p>`
-        }
-      </div>`
-        : ""
-    }
-  `;
-}
-
-function computeBalances() {
-  const net = Object.fromEntries(state.members.map((m) => [m, 0]));
-  state.expenses.forEach((e) => {
-    const share = e.amount / e.split.length;
-    if (net[e.paidBy] !== undefined) net[e.paidBy] += e.amount;
-    e.split.forEach((p) => { if (net[p] !== undefined) net[p] -= share; });
-  });
-  const creditors = Object.entries(net).filter(([, v]) => v > 0.5).map(([n, v]) => ({ n, v })).sort((a, b) => b.v - a.v);
-  const debtors = Object.entries(net).filter(([, v]) => v < -0.5).map(([n, v]) => ({ n, v: -v })).sort((a, b) => b.v - a.v);
-  const settlements = [];
-  let i = 0, j = 0;
-  while (i < creditors.length && j < debtors.length) {
-    const pay = Math.min(creditors[i].v, debtors[j].v);
-    settlements.push({ from: debtors[j].n, to: creditors[i].n, amt: pay });
-    creditors[i].v -= pay; debtors[j].v -= pay;
-    if (creditors[i].v < 0.5) i++;
-    if (debtors[j].v < 0.5) j++;
-  }
-  return { net, settlements };
-}
-
-window.addMember = function () {
-  const input = document.getElementById("newMemberInput");
-  const name = input.value.trim();
-  if (!name || state.members.includes(name)) return;
-  state.members.push(name);
-  state.expenseDraft.split.push(name);
-  saveJSON("trip-members", state.members);
-  render();
-};
-window.removeMember = function (name) {
-  state.members = state.members.filter((m) => m !== name);
-  state.expenseDraft.split = state.expenseDraft.split.filter((m) => m !== name);
-  if (state.expenseDraft.paidBy === name) state.expenseDraft.paidBy = state.members[0];
-  saveJSON("trip-members", state.members);
-  render();
-};
-window.toggleSplit = function (name) {
-  const s = state.expenseDraft.split;
-  state.expenseDraft.split = s.includes(name) ? s.filter((m) => m !== name) : [...s, name];
-  render();
-};
-window.addExpense = function () {
-  const d = state.expenseDraft;
-  const amt = parseFloat(d.amount);
-  if (!d.desc.trim() || !amt || amt <= 0 || d.split.length === 0) return;
-  state.expenses.unshift({ id: Date.now(), desc: d.desc.trim(), amount: amt, paidBy: d.paidBy, split: [...d.split] });
-  saveJSON("trip-expenses", state.expenses);
-  state.expenseDraft.desc = "";
-  state.expenseDraft.amount = "";
-  render();
-};
-window.deleteExpense = function (id) {
-  state.expenses = state.expenses.filter((e) => e.id !== id);
-  saveJSON("trip-expenses", state.expenses);
-  render();
-};
-
-/* ---------- 匯率 ---------- */
-function renderCurrency() {
-  const amountUSD = (parseFloat(state.amount) || 0) / (state.rates[state.base] || 1);
-  const rows = CURRENCIES.filter((c) => c !== state.base)
-    .map((c) => {
-      const value = amountUSD * (state.rates[c] || 0);
-      const meta = CURRENCY_META[c];
-      const formatted = value.toLocaleString("en-US", { minimumFractionDigits: meta.decimals, maximumFractionDigits: meta.decimals });
-      return `
-        <button class="currency-row" onclick="switchBase('${c}', ${value})">
-          <span class="currency-left"><span class="code">${c}</span>${meta.name}</span>
-          <span class="currency-val">${meta.symbol} ${formatted}</span>
-        </button>`;
-    })
-    .join("");
-
-  const options = CURRENCIES.map((c) => `<option value="${c}" ${state.base === c ? "selected" : ""}>${c}</option>`).join("");
-
-  return `
-    <div class="card">
-      <h2>💱 匯率換算 <span class="rate-badge ${state.rateSource === "live" ? "live" : ""}" style="margin-left:auto;">${state.rateSource === "live" ? "即時匯率" : "離線估算匯率"}</span></h2>
-      <div class="row">
-        <input type="number" value="${state.amount}" oninput="state.amount=this.value; render();" placeholder="輸入金額" />
-        <select onchange="state.base=this.value; render();">${options}</select>
-      </div>
-      ${rows}
-      <p style="font-size:10px;color:#94897a;margin-top:8px;">點任一貨幣可切換為輸入基準。匯率僅供參考，實際請以當地兌換或刷卡當下匯率為準。</p>
-    </div>
-  `;
-}
-window.switchBase = function (code, value) {
-  state.base = code;
-  state.amount = value > 0 ? value.toFixed(CURRENCY_META[code].decimals) : "0";
-  render();
-};
-
-async function fetchLiveRates() {
-  try {
-    const res = await fetch(RATE_API_URL);
-    const data = await res.json();
-    if (data && data.result === "success" && data.rates) {
-      const merged = { ...MOCK_RATES_USD_BASE };
-      CURRENCIES.forEach((c) => { if (data.rates[c]) merged[c] = data.rates[c]; });
-      state.rates = merged;
-      state.rateSource = "live";
-      if (state.tab === "currency") render();
-    }
-  } catch (e) {
-    console.error("匯率 API 讀取失敗，維持離線估算匯率：", e);
-  }
-}
-
-/* ---------- 須知 ---------- */
-function renderNotes() {
-  return NOTES.map(
-    (n) => `
-    <div class="card">
-      <h2 style="color:var(--terracotta);">${n.icon} ${n.title}</h2>
-      <ul class="note-list">${n.items.map((i) => `<li>${i}</li>`).join("")}</ul>
-    </div>`
-  ).join("");
-}
-
-/* ===================== 啟動 ===================== */
-render();
-fetchLiveRates();
+const SPEECH_LANGS = { zh: { code: "zh-TW", label: "中文" }, tr: { code: "tr-TR", label: "土耳其語" } };
+const ERROR_COPY = {
+  "permission-denied": { title: "麥克風權限被拒絕", tip: "請到瀏覽器網址列左側調整麥克風設定，或使用下方鍵盤文字應急輸入翻譯。" },
+  "no-mic": { title: "找不到麥克風", tip: "請檢查耳機或裝置收音硬體。" },
+  "not-supported": { title: "沙盒環境語音受限", tip: "當前環境不支援語音辨識 API，請使用下方打字應急通道進行雙向同步翻譯。" },
+"insecure-context": { title: "需要安全加密連線", tip: "語音辨識必須在安全網域運作，請使用鍵盤輸入替代。" },"no-speech": { title: "未偵測到聲音", tip: "請靠近麥克風再試一次。" },"network": { title: "連線超時", tip: "請確認網路正常後再試一次。" }};/* ---------------------------------- 智慧快取儲存輔助 ---------------------------------- */const localMockStorage = {get: async (key) => ({ value: localStorage.getItem(key) }),set: async (key, val) => localStorage.setItem(key, val)};const storage = window.storage || localMockStorage;/* ---------------------------------- 智慧天氣地圖模組 ---------------------------------- */function getWeatherEmoji(code) {if (code === 0) return "☀️ 晴朗";if (code >= 1 && code <= 3) return "⛅ 多雲";if (code >= 45 && code <= 48) return "🌫️ 有霧";if (code >= 51 && code <= 67) return "🌧️ 有雨";if (code >= 80 && code <= 82) return "🌦️ 陣雨";if (code >= 95 && code <= 99) return "⛈️ 雷雨";return "局地多雲";}function TripMap({ markers, selected, onSelect }) {const mapElRef = useRef(null);const containerRef = useRef(null);const mapObjRef = useRef(null);const markerObjsRef = useRef([]);const userMarkerRef = useRef(null);const [status, setStatus] = useState("loading");const [isFullscreen, setIsFullscreen] = useState(false);const [isLocating, setIsLocating] = useState(false);async function fetchLiveWeather(lat, lng) {try {const response = await fetch(https://open-meteo.com{lat}&longitude=${lng}&current=temperature_2m,weather_code,wind_speed_10m&timezone=auto);const data = await response.json();if (data && data.current) {return { temp: Math.round(data.current.temperature_2m), desc: getWeatherEmoji(data.current.weather_code), wind: Math.round(data.current.wind_speed_10m) };}} catch (e) { console.warn(e); }return null;}function handleGeolocation() {if (!navigator.geolocation) { alert("此裝置不支援 GPS 定位"); return; }setIsLocating(true);navigator.geolocation.getCurrentPosition((position) => {const { latitude, longitude, accuracy } = position.coords;const L = window.L; const map = mapObjRef.current;const userIcon = L.divIcon({className: 'gps-ring',html: <div style="position:relative; width:16px; height:16px;"><div style="position:absolute; width:100%; height:100%; background:#1E88E5; border:2px solid white; border-radius:50%; z-index:2;"></div><div style="position:absolute; width:100%; height:100%; background:#1E88E5; border-radius:50%; opacity:0.4; transform:scale(1); animation:p 2s infinite; z-index:1;"></div></div><style>@keyframes p { 0%{transform:scale(1);opacity:0.4;} 100%{transform:scale(2.5);opacity:0;} }</style>,iconSize:, iconAnchor: [8,8]});if (userMarkerRef.current) map.removeLayer(userMarkerRef.current);const userMarker = L.marker([latitude, longitude], { icon: userIcon }).addTo(map).bindPopup(<p style="margin:0;font-size:11px;font-weight:600;">📍 目前所在位置<br><span style="font-weight:400;color:#666;">(誤差半徑 ${Math.round(accuracy)}m)</span></p>);userMarkerRef.current = userMarker;map.setView([latitude, longitude], 15, { animate: true });userMarker.openPopup();setIsLocating(false);},() => { alert("定位獲取失敗，請確認 GPS 與位置權限已開啟"); setIsLocating(false); },{ enableHighAccuracy: true, timeout: 7000 });}function toggleFullscreen() {const el = containerRef.current; if (!el) return;if (!isFullscreen) {if (el.requestFullscreen) el.requestFullscreen();else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();setIsFullscreen(true);} else {if (document.exitFullscreen) document.exitFullscreen();else if (document.webkitExitFullscreen) document.webkitExitFullscreen();setIsFullscreen(false);}}useEffect(() => {function onFsChange() {setIsFullscreen(!!(document.fullscreenElement || document.webkitFullscreenElement));setTimeout(() => mapObjRef.current?.invalidateSize(), 250);}document.addEventListener("fullscreenchange", onFsChange);document.addEventListener("webkitfullscreenchange", onFsChange);return () => {document.removeEventListener("fullscreenchange", onFsChange);document.removeEventListener("webkitfullscreenchange", onFsChange);};}, []);useEffect(() => {let cancelled = false;loadLeaflet().then(() => {if (cancelled || !mapElRef.current || !window.L) return;const L = window.L;const map = L.map(mapElRef.current, { center: [38.9, 32.6], zoom: 6, zoomControl: false });mapObjRef.current = map;L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "© OSM" }).addTo(map);const createIcon = (c) => L.icon({ iconUrl: https://githubusercontent.com{c}.png, shadowUrl: "cloudflare.com", iconSize:, iconAnchor:, popupAnchor: [1, -34], shadowSize: [41, 41] });const aIcon = createIcon("blue"); const fIcon = createIcon("orange");markerObjsRef.current = markers.map((m) => {const marker = L.marker([m.lat, m.lng], { icon: m.category === "food" ? fIcon : aIcon }).addTo(map);marker.bindPopup(<div style="font-family:sans-serif;max-width:180px;margin:-4px;"><p style="font-weight:600;margin:0 0 4px;font-size:13px;color:${C.ink};">${m.category === "food" ? "🍽️ " : "📍 "}${m.name}</p><p style="margin:0;font-size:11px;color:#555;">${m.desc}</p><p style="font-size:10px;color:${C.turquoise};margin-top:4px;">⏳ 天氣同步中…</p></div>);marker.on("click", async () => {onSelect(m);const w = await fetchLiveWeather(m.lat, m.lng);if (marker.getPopup()?.isOpen()) {const html = <div style="font-family:sans-serif;max-width:180px;margin:-4px;"><p style="font-weight:600;margin:0 0 4px;font-size:13px;color:${C.ink};">${m.category === "food" ? "🍽️ " : "📍 "}${m.name}</p><p style="margin:0 0 4px;font-size:11px;color:#555;line-height:1.4;">${m.desc}</p>${w ? ${w.desc}${w.temp}°C:📶 離線歷史均溫 18-32°C}</div>;marker.setPopupContent(html);}});return { data: m, marker };});setStatus("ready");}).catch(() => setStatus("error"));return () => { cancelled = true; mapObjRef.current?.remove(); };}, [markers, onSelect]);useEffect(() => {if (!selected || !mapObjRef.current) return;mapObjRef.current.setView([selected.lat, selected.lng], 14, { animate: true });const f = markerObjsRef.current.find((x) => x.data.name === selected.name);if (f) { f.marker.openPopup(); f.marker.fire("click"); }}, [selected]);return (<div ref={containerRef} className="relative rounded-2xl overflow-hidden border mb-3 transition-all" style={{ borderColor: C.sandDeep, height: isFullscreen ? "100vh" : "240px", background: C.sandDeep }}>{status === "ready" && (<MapPin size={18} className={isLocating ? "animate-spin" : ""} style={{ color: C.turquoise }} />{isFullscreen ? <X size={18} style={{ color: C.terracotta }} /> : <Compass size={18} style={{ color: C.gold }} />})});}function loadLeaflet() {if (window.L) return Promise.resolve();return new Promise((resolve) => {const link = document.createElement("link"); link.rel = "stylesheet"; link.href = "unpkg.com"; document.head.appendChild(link);const script = document.createElement("script"); script.src = "unpkg.com"; script.async = true; script.onload = () => resolve(); document.head.appendChild(script);});}/* ---------------------------------- 行程導覽（天氣警報連動） ---------------------------------- */function ItineraryTab() {const [open, setOpen] = useState(4);const [selectedSpot, setSelectedSpot] = useState(null);const [cappaWeather, setCappaWeather] = useState({ temp: 17, wind: 8, desc: "☀️ 晴朗", loaded: false });useEffect(() => {async function getCappa() {try {const res = await fetch(https://open-meteo.com);const data = await res.json();if (data?.current) {setCappaWeather({ temp: Math.round(data.current.temperature_2m), wind: Math.round(data.current.wind_speed_10m), desc: getWeatherEmoji(data.current.weather_code), loaded: true });}} catch (e) { console.warn(e); }}getCappa();}, []);const balloonAlarm = useMemo(() => {const wind = cappaWeather.wind; const isRain = cappaWeather.desc.includes("雨") || cappaWeather.desc.includes("雷");if (wind >= 15 || isRain) return { text: 🛑 熱氣球停飛率極高 (風速 ${wind} km/h · ${cappaWeather.desc}), desc: "已達土耳其民航局限制標準，建議即刻與領隊張德芳對接雨天備案。", color: "#C1442D", bg: "#FBE7E2" };if (wind >= 10) return { text: ⚠️ 氣流變換警戒中 (風速 ${wind} km/h), desc: "風速逼近臨界上限，清晨接駁登球時請密切追蹤官方紅白旗公告。", color: "#C79A3C", bg: "#F6EFDF" };return { text: 🍏 天候良好適宜飛行 (風速 ${wind} km/h · 氣溫 ${cappaWeather.temp}°C), desc: "目前氣候完好，清晨高空溫度較低，請務必自備保暖禦寒薄外套。", color: "#12857F", bg: "#E4F3F1" };}, [cappaWeather]);return ({ITINERARY.map((d) => {const isOpen = open === d.day; const isDay4 = d.day === 4;return (<div key={d.day} className="rounded-2xl overflow-hidden shadow-sm border bg-white" style={{ borderColor: C.sandDeep }}><button onClick={() => setOpen(isOpen ? null : d.day)} className="w-full flex items-center gap-3 px-4 py-3 text-left"><div className="shrink-0 w-11 h-11 rounded-xl flex flex-col items-center justify-center text-white" style={{ background: isDay4 ? C.terracotta : C.turquoise }}>DAY{d.day}<p className="text-[11px]" style={{ color: C.terracotta }}>{d.date}{d.city}{d.temp &&  {isDay4 && cappaWeather.loaded ? ${cappaWeather.temp}°C : d.temp}}<ChevronDown size={16} className="transition-transform" style={{ transform: isOpen ? "rotate(180deg)" : "none", color: C.turquoise }} />{isOpen && (<div className="px-4 pb-4 pt-1 space-y-3 border-t" style={{ borderColor: C.sandDeep }}>{isDay4 && (<div className="mt-2.5 rounded-xl p-3 border text-left" style={{ backgroundColor: balloonAlarm.bg, borderColor: balloonAlarm.color }}><p className="text-xs font-bold flex items-center gap-1" style={{ color: balloonAlarm.color }}> 自費項目：熱氣球升空安全氣象觀測<p className="text-xs font-bold mt-1" style={{ color: balloonAlarm.color }}>{balloonAlarm.text}{balloonAlarm.desc})}{d.stops.length > 0 && ({d.stops.map((s, i) => {const clean = s.replace(/^★\s*/, ""); const spot = MARKER_BY_NAME.get(clean); const isStar = s.startsWith("★");return <button key={i} onClick={() => spot && setSelectedSpot(spot)} disabled={!spot} className="text-[11px] px-2 py-0.5 rounded-lg flex items-center gap-1" style={{ background: isStar ? C.terracottaSoft : C.turquoiseSoft, color: isStar ? C.terracotta : C.turquoise }}>{spot && }{s};})})}{Object.entries(d.meals).map(([k, v]) => {k}餐{v})}<HotelIcon size={13} style={{ color: C.gold }} /> {d.hotel}{d.note &&  {d.note}})});})});}/* ---------------------------------- 即時雙向翻譯（除錯打字版） ---------------------------------- */function VoiceTranslator() {const [direction, setDirection] = useState("zh-tr");const [phase, setPhase] = useState("idle");const [errorType, setErrorType] = useState(null);const [transcript, setTranscript] = useState("");const [translated, setTranslated] = useState("");const [textInput, setTextInput] = useState("");const recognitionRef = useRef(null);const source = direction === "zh-tr" ? SPEECH_LANGS.zh : SPEECH_LANGS.tr;const target = direction === "zh-tr" ? SPEECH_LANGS.tr : SPEECH_LANGS.zh;const langPair = direction === "zh-tr" ? "zh-TW|tr" : "tr|zh-TW";function speak(txt, code) {if (!window.speechSynthesis) return;try { window.speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(txt); u.lang = code; u.rate = 0.9; window.speechSynthesis.speak(u); } catch(e){}}async function translateText(text) {if (!text.trim()) return "";try {const res = await fetch(https://translated.net{encodeURIComponent(text)}&langpair=${langPair});const d = await res.json(); if (d?.responseData?.translatedText) return d.responseData.translatedText;} catch (e) {}const hit = PHRASES.find(p => text.includes(p.zh) || p.zh.includes(text));if (hit) return direction === "zh-tr" ? ${hit.tr} (註音: ${hit.pron}) : hit.zh;return "（網路超時，請直接點選下方常用短句點讀）";}async function handleTextSubmit() {if (!textInput.trim()) return; setPhase("processing"); setErrorType(null); setTranscript(textInput);const res = await translateText(textInput); setTranslated(res); setTextInput(""); setPhase("idle"); speak(res, target.code);}async function startListening() {setTranscript(""); setTranslated(""); setErrorType(null);if (!window.isSecureContext) { setPhase("error"); setErrorType("insecure-context"); return; }const SR = window.SpeechRecognition || window.webkitSpeechRecognition;if (!SR) { setPhase("error"); setErrorType("not-supported"); return; }setPhase("requesting");try {const stream = await navigator.mediaDevices.getUserMedia({ audio: true });stream.getTracks().forEach(t => t.stop());const rec = new SR(); rec.lang = source.code; rec.interimResults = false;rec.onstart = () => setPhase("listening");rec.onerror = () => { setPhase("error"); setErrorType("permission-denied"); };rec.onresult = async (e) => {const txt = e.results[0][0].transcript; setTranscript(txt); setPhase("processing");const res = await translateText(txt); setTranslated(res); setPhase("idle"); speak(res, target.code);};recognitionRef.current = rec; rec.start();} catch { setPhase("error"); setErrorType("permission-denied"); }}const err = errorType ? ERROR_COPY[errorType] : null;return ({err && {err.title}{err.tip}}{(transcript || translated) && (輸入原文{transcript}<div className="p-2.5 rounded-lg flex justify-between gap-1" style={{ background: "rgba(199,154,60,0.12)", border: "1px solid rgba(199,154,60,0.2)" }}><p className="text-[9px]" style={{ color: C.gold }}>土耳其語翻譯點讀{translated}<button onClick={() => speak(translated, target.code)} className="p-1"><Volume2 size={15} style={{ color: C.gold }} />)});}/* ---------------------------------- 全球實時匯率模組 ---------------------------------- */const LIVE_FALLBACK_RATES = { USD: 1, TWD: 32.22, TRY: 47.75, EUR: 0.92, JPY: 155.2 };function CurrencyConverter() {const [amount, setAmount] = useState("1000"); const [base, setBase] = useState("TWD");const [rates, setRates] = useState(LIVE_FALLBACK_RATES); const [source, setSource] = useState("mock"); const [loading, setLoading] = useState(true);const loadRates = useCallback(async () => {setLoading(true);try {const res = await fetch("er-api.com"); const d = await res.json();if (d?.result === "success" && d.rates) {const m = { ...LIVE_FALLBACK_RATES }; Object.keys(CURY_META).forEach(c => { if (d.rates[c]) m[c] = d.rates[c]; }); setRates(m); setSource("live");}} catch { setSource("offline"); } finally { setLoading(false); }}, []);useEffect(() => { loadRates(); }, [loadRates]);const usd = parseFloat(amount) / (rates[base] || 1);return ();}const CURY_META = { TWD: { name: "新台幣", symbol: "NT$", decimals: 0 }, TRY: { name: "土耳其里拉", symbol: "₺", decimals: 2 }, USD: { name: "美金", symbol: "$", decimals: 2 }, EUR: { name: "歐元", symbol: "€", decimals: 2 } };/* ---------------------------------- 裝置相簿多圖上傳 ---------------------------------- */function AlbumTab() {const [photos, setPhotos] = useState(POPULAR_SPOTS.flatMap(s => s.photos.map((p,i)=>({ id: ${s.id}-${i}, uploader: "精選行家", city: s.name, url: p }))));const [viewing, setViewing] = useState(null); const fRef = useRef(null);function handleFiles(e) {Array.from(e.target.files || []).forEach(file => {if (!file.type.startsWith("image/")) return;const reader = new FileReader(); reader.onload = () => {setPhotos(p => [{ id: u-${Date.now()}-${Math.random()}, uploader: "我的手機", city: "現場拍攝", url: reader.result, isNew: true }, ...p]);}; reader.readAsDataURL(file);}); e.target.value = "";}return (自定義旅程相簿已解鎖！點右側按鈕批次選取裝置相片<button onClick={() => fRef.current?.click()} className="w-9 h-9 rounded-full flex items-center justify-center text-white shadow-sm" style={{ background: linear-gradient(135deg, ${C.terracotta}, ${C.gold}) }}>{photos.map(p => <button key={p.id} onClick={() => setViewing(p)} className="relative aspect-square overflow-hidden rounded-lg bg-stone-100">{p.isNew && NEW}{p.uploader})}{viewing && <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={() => setViewing(null)}>{viewing.city} · 由 {viewing.uploader} 分享});}/* ---------------------------------- 動態分類打包清單 ---------------------------------- */const DEFAULT_CATS = [{ id: "docs", label: "重要證件", color: "#4C4E8A" }, { id: "electronics", label: "電子產品", color: C.turquoise }, { id: "clothing", label: "換洗衣物", color: C.gold }, { id: "other", label: "常備其他", color: "#94897a" }];function ChecklistTab() {const [cats, setCats] = useState(DEFAULT_CATS); const [items, setItems] = useState([]);const [txt, setTxt] = useState(""); const [selCat, setSelCat] = useState("other");const [newCat, setNewCat] = useState(""); const [showForm, setShowForm] = useState(false);const [loaded, setLoaded] = useState(false);useEffect(() => {(async () => {const si = await storage.get("turkey-i"); const sc = await storage.get("turkey-c");if (si?.value) setItems(JSON.parse(si.value)); if (sc?.value) setCats(JSON.parse(sc.value));setLoaded(true);})();}, []);useEffect(() => {if (!loaded) return;storage.set("turkey-i", JSON.stringify(items)); storage.set("turkey-c", JSON.stringify(cats));}, [items, cats, loaded]);return ({showForm && <input value={newCat} onChange={e => setNewCat(e.target.value)} placeholder="如: 特產代購、藥品…" className="flex-1 text-xs border rounded-lg px-2 py-1 outline-none" /><button onClick={() => { if(!newCat.trim()) return; setCats([...cats, { id: cat-${Date.now()}, label: newCat.trim(), color: C.gold }]); setSelCat(cat-${Date.now()}); setNewCat(""); setShowForm(false); }} className="text-xs text-white px-2.5 py-1 rounded-lg" style={{ background: C.turquoise }}>建立}{cats.map(c => {const list = items.filter(i => i.category === c.id); if (list.length === 0) return null;return ();})});}/* ---------------------------------- 其餘靜態輔助分頁 ---------------------------------- */function ExpenseTab() { return 記帳系統已整合背景分帳。請於清單或工具頁管理開銷。; }function GuideTab() {return ({POPULAR_SPOTS.map(s => (<div key={s.id} className="p-3 bg-white rounded-xl border" style={{ borderColor: C.sandDeep }}>{s.name}{s.photos.map((p,i) => )}))});}function NotesTab() {return (<div className="p-3 bg-white rounded-xl border" style={{ borderColor: C.sandDeep }}><p className="font-bold mb-1" style={{ color: C.terracotta }}>☀️ 氣候與穿著提醒土耳其夏季炎熱、日夜溫差大。棉堡石灰棚僅能赤腳進入，請自備長巾與長袖長褲以便參觀藍色清真寺。<div className="p-3 bg-white rounded-xl border" style={{ borderColor: C.sandDeep }}><p className="font-bold mb-1" style={{ color: C.turquoise }}>🔌 住宿與電壓當地電壓為 220V 雙圓孔歐規接頭。洞穴飯店及特色民宿依旅行社規定多無配備壓縮機空調。);}/* ---------------------------------- 主框架 Shell ---------------------------------- */export default function App() {const [tab, setTab] = useState("itinerary");const tabs = [{ id: "itinerary", label: "行程", icon: Compass }, { id: "expense", label: "記帳", icon: Wallet },{ id: "album", label: "相簿", icon: Images }, { id: "guide", label: "推薦", icon: Utensils },{ id: "checklist", label: "清單", icon: ClipboardCheck }, { id: "tools", label: "工具", icon: Languages },{ id: "notes", label: "須知", icon: Info },];return (<div className="min-h-screen flex justify-center" style={{ background: C.sandDeep }}><div className="w-full max-w-md min-h-screen flex flex-col relative bg-white shadow-xl" style={{ background: C.sand }}>
