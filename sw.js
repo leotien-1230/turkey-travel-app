@@ -1,54 +1,26 @@
-const CACHE_NAME = "turkey-pwa-v3";
-const ASSETS = [
-  "./",
-  "./index.html",
-  "./style.css",
-  "./app.js",
-  "./manifest.json",
-  "https://unpkg.com",
-  "https://unpkg.com"
-];
+const CACHE_NAME = "turkey-trip-pwa-v3";
+const ASSETS = ["./", "./index.html", "./style.css", "./app.js", "./manifest.json"];
 
-// 1. 安裝並凍結核心快取
-self.addEventListener("install", (e) => {
-  e.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS);
-    }).then(() => self.skipWaiting())
+self.addEventListener("install", (event) => {
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting()));
+});
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))).then(() => self.clients.claim())
   );
 });
-
-// 2. 清理過期快取檔案
-self.addEventListener("activate", (e) => {
-  e.waitUntil(
-    caches.keys().then((keys) => {
-      return Promise.all(
-        keys.map((key) => {
-          if (key !== CACHE_NAME) return caches.delete(key);
-        })
-      );
-    }).then(() => self.clients.claim())
-  );
-});
-
-// 3. 攔截請求並提供離線快取支援
-self.addEventListener("fetch", (e) => {
-  if (e.request.method !== "GET" || !e.request.url.startsWith("http")) return;
-
-  e.respondWith(
-    fetch(e.request)
-      .then((res) => {
-        const resClone = res.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(e.request, resClone);
-        });
+self.addEventListener("fetch", (event) => {
+  if (event.request.method !== "GET") return;
+  event.respondWith(
+    caches.match(event.request).then((cached) => {
+      const networkFetch = fetch(event.request).then((res) => {
+        if (res && res.status === 200 && res.type === "basic") {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
         return res;
-      })
-      .catch(() => {
-        return caches.match(e.request).then((cachedResponse) => {
-          return cachedResponse || new Response("離線且無快取資料", { status: 503 });
-        });
-      })
+      }).catch(() => cached);
+      return cached || networkFetch;
+    })
   );
 });
-
