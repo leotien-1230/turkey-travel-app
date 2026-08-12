@@ -20,7 +20,7 @@ const CURRENCY_META = {
 };
 const CURRENCIES = Object.keys(CURRENCY_META);
 const MOCK_RATES_USD_BASE = { USD: 1, TWD: 32.5, JPY: 155.2, KRW: 1380, EUR: 0.92, THB: 36.8, TRY: 44 };
-const RATE_API_URL = "https://open.er-api.com/v6/latest/USD"; // 免金鑰即時匯率端點
+const RATE_API_URL = "https://open.er-api.com/v6/latest/USD";
 
 const NOTES = [
   { title: "穿著提醒", icon: "👕", items: ["風俗較保守，避免緊身、暴露服裝", "參觀清真寺需脫鞋；女性需頭巾、長袖、長褲或長裙", "棉堡石灰棚僅能赤腳，建議帶拖鞋", "溫泉飯店可自備泳衣泡湯"] },
@@ -29,7 +29,6 @@ const NOTES = [
   { title: "money 匯兌", icon: "💰", items: ["當地可用歐元、美金、里拉", "建議準備 700–800 美金換匯", "美金需攜帶新版鈔票，避免收 50 美金面額", "每日房間小費約 1 美元／房"] },
 ];
 
-// 地圖標記（開源地圖用）：景點藍色／美食橘色
 const ATTRACTION_COORDS = {
   "希德爾立克山丘": { lat: 41.2530, lng: 32.6975, desc: "番紅花城最佳觀景台，可俯瞰整片鄂圖曼老城。" },
   "國父凱末爾紀念館": { lat: 39.9255, lng: 32.8372, desc: "土耳其國父長眠之處，融合多種古文明建築特色。" },
@@ -56,12 +55,16 @@ const ALL_MAP_MARKERS = [
   ...FOOD_MARKERS.map((f) => ({ ...f, category: "food" })),
 ];
 
-// 天氣城市座標（Open-Meteo）
+// 行程會到達的城市，全部納入即時天氣
 const WEATHER_CITIES = [
   { name: "伊斯坦堡", lat: 41.0082, lng: 28.9784 },
   { name: "番紅花城", lat: 41.2544, lng: 32.6944 },
+  { name: "安卡拉", lat: 39.9334, lng: 32.8597 },
   { name: "卡帕多奇亞", lat: 38.6431, lng: 34.8286 },
+  { name: "孔亞", lat: 37.8713, lng: 32.5236 },
   { name: "棉堡", lat: 37.9235, lng: 29.1244 },
+  { name: "庫薩達西", lat: 37.8579, lng: 27.2610 },
+  { name: "布爾薩", lat: 40.1826, lng: 29.0743 },
 ];
 
 const SPOT_TAG_STYLE = {
@@ -72,7 +75,6 @@ const SPOT_TAG_STYLE = {
   "夢幻仙境": { emoji: "✨", bg: "#F1E7F6", fg: "#8A4C9E" },
   "購物天堂": { emoji: "🛍️", bg: "#FCEBDD", fg: "#C97A2E" },
 };
-// 打卡照改用 Wikimedia Commons 真實授權地標實拍照（CC 授權，透過 Special:FilePath 取縮圖）
 function wmFile(name, width) { return `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(name)}?width=${width || 400}`; }
 const POPULAR_SPOTS = [
   { id: "cappadocia", name: "卡帕多奇亞熱氣球", tags: ["IG熱門", "夢幻仙境"], photos: [
@@ -109,6 +111,8 @@ const CHECKLIST_CATEGORIES = [
   { id: "clothing", label: "換洗衣物", icon: "👕", color: "#C79A3C" },
   { id: "other", label: "其他", icon: "📦", color: "#94897a" },
 ];
+const CATEGORY_ICON_POOL = ["🎒","💊","🧴","🔌","🧢","📚","🕶️","🧳"];
+const CATEGORY_COLOR_POOL = ["#8A4C9E","#2E86AB","#C97A2E","#4C4E8A","#12857F","#C1442D"];
 const DEFAULT_CHECKLIST_ITEMS = [
   { text: "護照", category: "docs" }, { text: "身分證", category: "docs" }, { text: "簽證 / 入境許可", category: "docs" },
   { text: "旅遊保險證明", category: "docs" }, { text: "信用卡", category: "docs" }, { text: "現金 / 外幣", category: "docs" },
@@ -140,14 +144,12 @@ const ERROR_COPY = {
   "unknown": { title: "麥克風目前無法使用", tip: "請重新整理頁面再試一次；若仍無反應，可改用下方文字翻譯。" },
 };
 
-/* ===================== 共用工具：逾時 fetch ===================== */
+/* ===================== 共用工具 ===================== */
 function fetchWithTimeout(url, ms) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms || 8000);
   return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
 }
-
-/* ===================== 儲存 ===================== */
 function loadJSON(key, fallback) {
   try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; }
   catch (e) { console.error("讀取 localStorage 失敗：", e); return fallback; }
@@ -166,13 +168,15 @@ const state = {
   rates: MOCK_RATES_USD_BASE, rateSource: "mock", rateUpdatedAt: null, rateLoading: false, amount: 1000, base: "TWD",
   albumPhotos: loadJSON("trip-album-photos", DEFAULT_ALBUM_PHOTOS),
   checklistItems: loadJSON("trip-checklist", DEFAULT_CHECKLIST_ITEMS),
+  customCategories: loadJSON("trip-checklist-categories", []),
   checklistDraft: { text: "", category: "other" },
   photoTranslate: { photo: null, status: "idle", result: null },
   voiceTranslate: { direction: "zh-tr", phase: "idle", errorType: null, transcript: "", translated: "" },
   voiceMemo: { recState: "idle", errorMsg: "", audioURL: null, seconds: 0 },
   textTranslate: { input: "", history: [], loading: false },
-  weather: {}, // 城市名 -> {temp, code}
-  balloon: null, // { flyable, wind, text }
+  weather: {},
+  balloon: null,
+  locationWeather: null,
 };
 state.expenseDraft.paidBy = state.members[0];
 state.expenseDraft.split = [...state.members];
@@ -215,7 +219,7 @@ function render() {
   }
 }
 
-/* ===================== 天氣 / 熱氣球 ===================== */
+/* ===================== 天氣 / 熱氣球 / 目前位置 ===================== */
 function weatherEmoji(code) {
   if (code === 0) return "☀️";
   if ([1, 2, 3].includes(code)) return "⛅";
@@ -241,13 +245,45 @@ async function fetchWeather() {
     if (state.tab === "itinerary") render();
   } catch (e) { console.error("天氣資料讀取失敗：", e); }
 }
+// 目前位置天氣：定位 → 反查地名（OpenStreetMap Nominatim，開源）→ 查詢天氣（Open-Meteo）
+function fetchCurrentLocationWeather() {
+  if (!navigator.geolocation) { alert("此裝置或瀏覽器不支援定位功能"); return; }
+  navigator.geolocation.getCurrentPosition(async (pos) => {
+    const { latitude, longitude } = pos.coords;
+    try {
+      const [nameRes, weatherRes] = await Promise.all([
+        fetchWithTimeout(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}&accept-language=zh-TW`, 8000),
+        fetchWithTimeout(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code&timezone=auto`, 8000),
+      ]);
+      const nameData = await nameRes.json();
+      const wData = await weatherRes.json();
+      const addr = nameData.address || {};
+      const name = addr.city || addr.town || addr.county || addr.state || nameData.name || "目前位置";
+      state.locationWeather = { name, temp: wData.current.temperature_2m, code: wData.current.weather_code };
+    } catch (e) {
+      console.error("目前位置天氣讀取失敗：", e);
+      alert("無法取得目前位置的天氣資料，請稍後再試");
+    }
+    if (state.tab === "itinerary") render();
+  }, (err) => { alert("無法取得目前位置：" + (err.message || "請確認已允許定位權限")); }, { enableHighAccuracy: true, timeout: 8000 });
+}
 
 /* ===================== 行程 + 地圖 ===================== */
 function renderItinerary() {
+  const locHtml = state.locationWeather ? `
+    <div class="current-location-weather">
+      <div class="weather-chip current"><span>📍 ${state.locationWeather.name}</span><span>${weatherEmoji(state.locationWeather.code)} ${Math.round(state.locationWeather.temp)}°C</span></div>
+      <button class="link-btn" id="refreshLocationWeatherBtn">🔄</button>
+    </div>` : `
+    <div class="current-location-weather">
+      <button class="locate-weather-btn" id="locateWeatherBtn">📍 取得目前位置的天氣</button>
+    </div>`;
+
   const weatherHtml = WEATHER_CITIES.map((c) => {
     const w = state.weather[c.name];
     return w ? `<div class="weather-chip"><span>${c.name}</span><span>${weatherEmoji(w.code)} ${Math.round(w.temp)}°C</span></div>` : `<div class="weather-chip"><span>${c.name}</span><span>…</span></div>`;
   }).join("");
+
   const balloonHtml = state.balloon ? `
     <div class="balloon-alert ${state.balloon.flyable ? "ok" : "warn"}">
       <span>🎈</span>
@@ -275,7 +311,8 @@ function renderItinerary() {
 
   return `
     <div class="card">
-      <h2>🌤️ 各地即時天氣</h2>
+      <h2>🌤️ 即時天氣</h2>
+      ${locHtml}
       <div class="weather-grid">${weatherHtml}</div>
       ${balloonHtml}
     </div>
@@ -292,24 +329,20 @@ function renderItinerary() {
     </div>
     ${dayCards}`;
 }
-
 function wireItineraryEvents() {
   initOrUpdateMap();
-  const fsBtn = document.getElementById("mapFullscreenBtn");
-  if (fsBtn) fsBtn.onclick = toggleMapFullscreen;
-  const locateBtn = document.getElementById("mapLocateBtn");
-  if (locateBtn) locateBtn.onclick = locateMe;
+  const fsBtn = document.getElementById("mapFullscreenBtn"); if (fsBtn) fsBtn.onclick = toggleMapFullscreen;
+  const locateBtn = document.getElementById("mapLocateBtn"); if (locateBtn) locateBtn.onclick = locateMe;
+  const locWeatherBtn = document.getElementById("locateWeatherBtn"); if (locWeatherBtn) locWeatherBtn.onclick = fetchCurrentLocationWeather;
+  const refreshLocWeatherBtn = document.getElementById("refreshLocationWeatherBtn"); if (refreshLocWeatherBtn) refreshLocWeatherBtn.onclick = fetchCurrentLocationWeather;
 }
-
 function initOrUpdateMap() {
   const mapEl = document.getElementById("tripMap");
   if (!mapEl || typeof L === "undefined") return;
   if (!tripMap) {
-    // 開源地圖：Leaflet + OpenStreetMap 圖磚（不需金鑰）
     tripMap = L.map("tripMap", { zoomControl: true }).setView([38.9, 32.6], 6);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }).addTo(tripMap);
     tripMapLayer = L.layerGroup().addTo(tripMap);
     ALL_MAP_MARKERS.forEach((m) => {
@@ -325,31 +358,22 @@ function toggleMapFullscreen() {
   const wrap = document.getElementById("mapWrap");
   if (!wrap) return;
   const isFs = document.fullscreenElement || document.webkitFullscreenElement;
-  if (!isFs) {
-    (wrap.requestFullscreen || wrap.webkitRequestFullscreen || wrap.msRequestFullscreen || function () {}).call(wrap);
-  } else {
-    (document.exitFullscreen || document.webkitExitFullscreen || function () {}).call(document);
-  }
+  if (!isFs) { (wrap.requestFullscreen || wrap.webkitRequestFullscreen || wrap.msRequestFullscreen || function () {}).call(wrap); }
+  else { (document.exitFullscreen || document.webkitExitFullscreen || function () {}).call(document); }
 }
 document.addEventListener("fullscreenchange", () => { if (tripMap) setTimeout(() => tripMap.invalidateSize(), 200); });
 document.addEventListener("webkitfullscreenchange", () => { if (tripMap) setTimeout(() => tripMap.invalidateSize(), 200); });
-
 function locateMe() {
   if (!navigator.geolocation) { alert("此裝置或瀏覽器不支援定位功能"); return; }
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      const { latitude, longitude } = pos.coords;
-      if (userLocationMarker) tripMap.removeLayer(userLocationMarker);
-      userLocationMarker = L.circleMarker([latitude, longitude], { radius: 8, color: "#fff", weight: 3, fillColor: "#12857F", fillOpacity: 1 })
-        .addTo(tripMap).bindPopup("📍 你目前的位置").openPopup();
-      tripMap.setView([latitude, longitude], 12);
-    },
-    (err) => { alert("無法取得目前位置：" + (err.message || "請確認已允許定位權限")); },
-    { enableHighAccuracy: true, timeout: 8000 }
-  );
+  navigator.geolocation.getCurrentPosition((pos) => {
+    const { latitude, longitude } = pos.coords;
+    if (userLocationMarker) tripMap.removeLayer(userLocationMarker);
+    userLocationMarker = L.circleMarker([latitude, longitude], { radius: 8, color: "#fff", weight: 3, fillColor: "#12857F", fillOpacity: 1 }).addTo(tripMap).bindPopup("📍 你目前的位置").openPopup();
+    tripMap.setView([latitude, longitude], 12);
+  }, (err) => { alert("無法取得目前位置：" + (err.message || "請確認已允許定位權限")); }, { enableHighAccuracy: true, timeout: 8000 });
 }
 
-/* ===================== 記帳（與前版相同） ===================== */
+/* ===================== 記帳 ===================== */
 function renderExpense() {
   const d = state.expenseDraft;
   const membersHtml = state.members.map((m) => `<span class="chip">${m}<button onclick="removeMember('${m}')">✕</button></span>`).join("");
@@ -365,7 +389,6 @@ function renderExpense() {
         </div>
       </div>`).join("");
   const balances = computeBalances();
-
   return `
     <div class="card">
       <h2>👥 同行夥伴</h2>
@@ -443,7 +466,7 @@ window.deleteExpense = function (id) {
   saveJSON("trip-expenses", state.expenses); render();
 };
 
-/* ===================== 相簿（新增：拍照 + 從裝置選擇檔案） ===================== */
+/* ===================== 相簿（上傳者本人才能刪除） ===================== */
 function renderAlbum() {
   const photosHtml = state.albumPhotos.map((p) => `
     <div class="photo-cell" data-id="${p.id}">
@@ -452,12 +475,13 @@ function renderAlbum() {
            onerror="this.parentElement.classList.add('error')" />
       <div class="photo-placeholder">🖼️</div>
       ${p.isNew ? '<span class="photo-new">NEW</span>' : ""}
+      ${p.uploader === "我" ? `<button class="photo-delete" data-id="${p.id}" title="刪除照片">🗑</button>` : ""}
       <div class="photo-caption">${p.uploader}</div>
     </div>`).join("");
 
   return `
     <div class="album-header">
-      <div><p class="album-title">旅程相簿</p><p class="album-sub">${state.albumPhotos.length} 張夥伴共享的回憶</p></div>
+      <div><p class="album-title">旅程相簿</p><p class="album-sub">${state.albumPhotos.length} 張夥伴共享的回憶（僅上傳者本人可刪除自己的照片）</p></div>
       <div class="album-actions">
         <button class="fab camera" id="albumCameraBtn" title="拍照">📷</button>
         <button class="fab gallery" id="albumGalleryBtn" title="從裝置選擇檔案">🖼️</button>
@@ -488,6 +512,14 @@ function addPhotosFromFileList(fileList) {
     reader.readAsDataURL(file);
   });
 }
+function deleteAlbumPhoto(id) {
+  const photo = state.albumPhotos.find((p) => String(p.id) === String(id));
+  if (!photo || photo.uploader !== "我") return; // 權限檢查：僅上傳者本人可刪除
+  if (!confirm("確定要刪除這張照片嗎？")) return;
+  state.albumPhotos = state.albumPhotos.filter((p) => String(p.id) !== String(id));
+  saveJSON("trip-album-photos", state.albumPhotos);
+  render();
+}
 function wireAlbumEvents() {
   const cameraBtn = document.getElementById("albumCameraBtn");
   const cameraInput = document.getElementById("albumCameraInput");
@@ -499,6 +531,9 @@ function wireAlbumEvents() {
   if (galleryBtn) galleryBtn.onclick = () => galleryInput.click();
   if (galleryInput) galleryInput.onchange = (e) => { addPhotosFromFileList(e.target.files); e.target.value = ""; };
 
+  document.querySelectorAll(".photo-delete").forEach((btn) => {
+    btn.onclick = (e) => { e.stopPropagation(); deleteAlbumPhoto(btn.dataset.id); };
+  });
   document.querySelectorAll(".photo-cell").forEach((cell) => { cell.onclick = () => openLightbox(cell.dataset.id); });
   const closeBtn = document.getElementById("lightboxClose");
   if (closeBtn) closeBtn.onclick = closeLightbox;
@@ -516,7 +551,7 @@ function openLightbox(id) {
 }
 function closeLightbox() { document.getElementById("lightbox").classList.remove("open"); }
 
-/* ===================== 推薦（打卡照已換成 Wikimedia 真實地標照） ===================== */
+/* ===================== 推薦 ===================== */
 function tagPillHtml(tag) {
   const s = SPOT_TAG_STYLE[tag] || { emoji: "⭐", bg: "#f6efdf", fg: "#94897a" };
   return `<span class="tag-pill" style="background:${s.bg};color:${s.fg};">${s.emoji} ${tag}</span>`;
@@ -559,12 +594,14 @@ function renderGuide() {
     ${cityAccordion}`;
 }
 
-/* ===================== 清單（與前版相同） ===================== */
+/* ===================== 清單（可自訂新增分類） ===================== */
 function renderChecklist() {
+  const allCategories = [...CHECKLIST_CATEGORIES, ...state.customCategories];
   const total = state.checklistItems.length;
   const done = state.checklistItems.filter((i) => i.checked).length;
   const percent = total ? Math.round((done / total) * 100) : 0;
-  const catBlocks = CHECKLIST_CATEGORIES.map((cat) => {
+
+  const catBlocks = allCategories.map((cat) => {
     const items = state.checklistItems.filter((i) => i.category === cat.id);
     if (!items.length) return "";
     return `
@@ -582,7 +619,9 @@ function renderChecklist() {
         </ul>
       </div>`;
   }).join("");
-  const catOptions = CHECKLIST_CATEGORIES.map((c) => `<option value="${c.id}" ${state.checklistDraft.category === c.id ? "selected" : ""}>${c.label}</option>`).join("");
+
+  const catOptions = allCategories.map((c) => `<option value="${c.id}" ${state.checklistDraft.category === c.id ? "selected" : ""}>${c.label}</option>`).join("");
+
   return `
     <div class="card">
       <div class="checklist-progress-head"><p style="margin:0;">打包清單</p><span>${done} / ${total} 已完成</span></div>
@@ -594,6 +633,10 @@ function renderChecklist() {
         <select onchange="state.checklistDraft.category=this.value">${catOptions}</select>
       </div>
       <button class="btn btn-primary" onclick="addChecklistItem()">＋ 新增項目</button>
+      <div class="row checklist-add-category-row">
+        <input id="newCategoryInput" placeholder="自訂新分類（例如：藥品）" onkeydown="if(event.key==='Enter')addCustomCategory()" />
+        <button class="btn-add" onclick="addCustomCategory()">＋分類</button>
+      </div>
     </div>
     ${catBlocks}`;
 }
@@ -612,20 +655,28 @@ window.addChecklistItem = function () {
   state.checklistDraft.text = "";
   saveJSON("trip-checklist", state.checklistItems); render();
 };
+window.addCustomCategory = function () {
+  const input = document.getElementById("newCategoryInput");
+  const name = input.value.trim();
+  if (!name) return;
+  const exists = [...CHECKLIST_CATEGORIES, ...state.customCategories].some((c) => c.label === name);
+  if (exists) { input.value = ""; return; }
+  const idx = state.customCategories.length;
+  const newCat = { id: "custom-" + Date.now(), label: name, icon: CATEGORY_ICON_POOL[idx % CATEGORY_ICON_POOL.length], color: CATEGORY_COLOR_POOL[idx % CATEGORY_COLOR_POOL.length] };
+  state.customCategories.push(newCat);
+  saveJSON("trip-checklist-categories", state.customCategories);
+  state.checklistDraft.category = newCat.id;
+  render();
+};
 
-/* ===================== 翻譯 API（修正：逾時保護＋錯誤訊息） ===================== */
+/* ===================== 翻譯 API ===================== */
 async function translateViaAPI(text, langPair) {
   try {
-    const res = await fetchWithTimeout(
-      `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langPair}&de=traveler@example.com`,
-      8000
-    );
+    const res = await fetchWithTimeout(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langPair}&de=traveler@example.com`, 8000);
     if (!res.ok) throw new Error("HTTP " + res.status);
     const data = await res.json();
     const result = data && data.responseData && data.responseData.translatedText;
-    if (!result || /MYMEMORY WARNING/i.test(result)) {
-      return "（翻譯服務目前忙碌，請稍後再試，或使用下方常用短句）";
-    }
+    if (!result || /MYMEMORY WARNING/i.test(result)) return "（翻譯服務目前忙碌，請稍後再試，或使用下方常用短句）";
     return result;
   } catch (e) {
     console.error("翻譯失敗：", e);
@@ -887,25 +938,30 @@ window.translatePhrase = function (i) {
   render();
 };
 
-/* ===================== 匯率換算（強化即時串接） ===================== */
-function renderCurrencySection() {
+/* ===================== 匯率換算（修正：金額輸入不再整頁重繪，游標不會跳走） ===================== */
+function currencyRowsHTML() {
   const amountUSD = (parseFloat(state.amount) || 0) / (state.rates[state.base] || 1);
-  const rows = CURRENCIES.filter((c) => c !== state.base).map((c) => {
+  return CURRENCIES.filter((c) => c !== state.base).map((c) => {
     const value = amountUSD * (state.rates[c] || 0);
     const meta = CURRENCY_META[c];
     const formatted = value.toLocaleString("en-US", { minimumFractionDigits: meta.decimals, maximumFractionDigits: meta.decimals });
     return `<button class="currency-row" onclick="switchBase('${c}', ${value})"><span class="currency-left"><span class="code">${c}</span>${meta.name}</span><span class="currency-val">${meta.symbol} ${formatted}</span></button>`;
   }).join("");
+}
+function updateCurrencyRows() {
+  const container = document.getElementById("currencyRows");
+  if (container) container.innerHTML = currencyRowsHTML();
+}
+function renderCurrencySection() {
   const options = CURRENCIES.map((c) => `<option value="${c}" ${state.base === c ? "selected" : ""}>${c}</option>`).join("");
-
   return `
     <div class="card">
       <h2>💱 匯率換算 <span class="rate-badge ${state.rateSource === "live" ? "live" : ""}">${state.rateLoading ? "更新中…" : state.rateSource === "live" ? "即時匯率" : "離線估算匯率"}</span></h2>
       <div class="row">
-        <input id="currencyAmountInput" type="number" value="${state.amount}" oninput="state.amount=this.value; render();" placeholder="輸入金額" />
+        <input id="currencyAmountInput" type="text" inputmode="decimal" value="${state.amount}" oninput="state.amount=this.value; updateCurrencyRows();" placeholder="輸入金額" />
         <select onchange="state.base=this.value; render();">${options}</select>
       </div>
-      ${rows}
+      <div id="currencyRows">${currencyRowsHTML()}</div>
       <div class="rate-meta-row">
         <span class="rate-updated">${state.rateUpdatedAt ? "最後更新：" + state.rateUpdatedAt : "尚未取得即時匯率"}</span>
         <button class="refresh-btn" onclick="fetchLiveRates()">🔄 重新整理匯率</button>
@@ -931,12 +987,8 @@ window.fetchLiveRates = async function () {
       state.rates = merged; state.rateSource = "live";
       state.rateUpdatedAt = new Date().toLocaleString("zh-TW", { hour12: false });
     }
-  } catch (e) {
-    console.error("匯率 API 讀取失敗，維持離線估算匯率：", e);
-  } finally {
-    state.rateLoading = false;
-    if (state.tab === "tools") render();
-  }
+  } catch (e) { console.error("匯率 API 讀取失敗，維持離線估算匯率：", e); }
+  finally { state.rateLoading = false; if (state.tab === "tools") render(); }
 };
 
 /* ===================== 工具分頁組合 ===================== */
