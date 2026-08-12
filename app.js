@@ -55,7 +55,6 @@ const ALL_MAP_MARKERS = [
   ...FOOD_MARKERS.map((f) => ({ ...f, category: "food" })),
 ];
 
-// 行程會到達的城市，全部納入即時天氣
 const WEATHER_CITIES = [
   { name: "伊斯坦堡", lat: 41.0082, lng: 28.9784 },
   { name: "番紅花城", lat: 41.2544, lng: 32.6944 },
@@ -122,6 +121,17 @@ const DEFAULT_CHECKLIST_ITEMS = [
   { text: "襪子", category: "clothing" }, { text: "外套", category: "clothing" },
 ].map((it, i) => ({ id: `default-${i}`, checked: false, ...it }));
 
+// 支出分類（記帳用）
+const EXPENSE_CATEGORIES = [
+  { id: "food", label: "餐飲", icon: "🍽️", color: "#C1442D" },
+  { id: "transport", label: "交通", icon: "🚌", color: "#12857F" },
+  { id: "shopping", label: "購物", icon: "🛍️", color: "#C79A3C" },
+  { id: "accommodation", label: "住宿", icon: "🏨", color: "#4C4E8A" },
+  { id: "ticket", label: "門票／活動", icon: "🎟️", color: "#8A4C9E" },
+  { id: "other", label: "其他", icon: "📦", color: "#94897a" },
+];
+function expenseCategoryOf(id) { return EXPENSE_CATEGORIES.find((c) => c.id === id) || EXPENSE_CATEGORIES[EXPENSE_CATEGORIES.length - 1]; }
+
 const PHRASES = [
   { zh: "你好", tr: "Merhaba", pron: "梅兒哈巴" }, { zh: "謝謝", tr: "Teşekkürler", pron: "特謝屈雷兒" },
   { zh: "多少錢？", tr: "Ne kadar?", pron: "內 卡達爾" }, { zh: "洗手間在哪裡？", tr: "Tuvalet nerede?", pron: "圖瓦雷 內雷德" },
@@ -164,7 +174,8 @@ const state = {
   tab: "itinerary",
   members: loadJSON("trip-members", ["我", "同伴A", "同伴B"]),
   expenses: loadJSON("trip-expenses", []),
-  expenseDraft: { desc: "", amount: "", paidBy: null, split: [] },
+  expenseDraft: { desc: "", amount: "", paidBy: null, split: [], category: "other" },
+  expenseSummaryView: "member", // member | category
   rates: MOCK_RATES_USD_BASE, rateSource: "mock", rateUpdatedAt: null, rateLoading: false, amount: 1000, base: "TWD",
   albumPhotos: loadJSON("trip-album-photos", DEFAULT_ALBUM_PHOTOS),
   checklistItems: loadJSON("trip-checklist", DEFAULT_CHECKLIST_ITEMS),
@@ -180,6 +191,8 @@ const state = {
 };
 state.expenseDraft.paidBy = state.members[0];
 state.expenseDraft.split = [...state.members];
+// 舊資料相容：補上分類欄位
+state.expenses.forEach((e) => { if (!e.category) e.category = "other"; });
 
 let voiceRecognition = null;
 let voiceMemoRecorder = null, voiceMemoChunks = [], voiceMemoStream = null, voiceMemoTimer = null;
@@ -239,13 +252,12 @@ async function fetchWeather() {
     results.forEach((r) => { state.weather[r.name] = r; });
     const cap = state.weather["卡帕多奇亞"];
     if (cap) {
-      const flyable = cap.wind < 20; // 概略參考門檻，實際仍以當地業者/民航局現場公告為準
+      const flyable = cap.wind < 20;
       state.balloon = { flyable, wind: Math.round(cap.wind), text: flyable ? "風力條件較穩定，熱氣球有機會正常升空" : "目前風力偏大，熱氣球今日可能延誤或停飛" };
     }
     if (state.tab === "itinerary") render();
   } catch (e) { console.error("天氣資料讀取失敗：", e); }
 }
-// 目前位置天氣：定位 → 反查地名（OpenStreetMap Nominatim，開源）→ 查詢天氣（Open-Meteo）
 function fetchCurrentLocationWeather() {
   if (!navigator.geolocation) { alert("此裝置或瀏覽器不支援定位功能"); return; }
   navigator.geolocation.getCurrentPosition(async (pos) => {
@@ -336,13 +348,28 @@ function wireItineraryEvents() {
   const locWeatherBtn = document.getElementById("locateWeatherBtn"); if (locWeatherBtn) locWeatherBtn.onclick = fetchCurrentLocationWeather;
   const refreshLocWeatherBtn = document.getElementById("refreshLocationWeatherBtn"); if (refreshLocWeatherBtn) refreshLocWeatherBtn.onclick = fetchCurrentLocationWeather;
 }
+
+// 🔧 修正重點：每次進入行程頁都先銷毀舊地圖再重新建立，
+// 避免舊地圖物件綁定到已被 innerHTML 替換掉的 DOM 節點，導致地圖打不開
 function initOrUpdateMap() {
   const mapEl = document.getElementById("tripMap");
-  if (!mapEl || typeof L === "undefined") return;
-  if (!tripMap) {
+  if (!mapEl) return;
+
+  if (typeof L === "undefined") {
+    mapEl.parentElement.innerHTML = `<div style="padding:34px 16px;text-align:center;color:#94897a;font-size:12px;line-height:1.6;">⚠️ 地圖套件（Leaflet）載入失敗<br/>請確認網路連線後重新整理頁面再試一次</div>`;
+    return;
+  }
+
+  if (tripMap) {
+    try { tripMap.remove(); } catch (e) { console.warn("清除舊地圖時發生小狀況：", e); }
+    tripMap = null; tripMapLayer = null; userLocationMarker = null;
+  }
+
+  try {
     tripMap = L.map("tripMap", { zoomControl: true }).setView([38.9, 32.6], 6);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }).addTo(tripMap);
     tripMapLayer = L.layerGroup().addTo(tripMap);
     ALL_MAP_MARKERS.forEach((m) => {
@@ -350,8 +377,11 @@ function initOrUpdateMap() {
       const marker = L.circleMarker([m.lat, m.lng], { radius: 8, color: "#fff", weight: 2, fillColor: color, fillOpacity: 1 }).addTo(tripMapLayer);
       marker.bindPopup(`<b>${m.category === "food" ? "🍽️" : "📍"} ${m.name}</b><br/><span style="font-size:12px;color:#555;">${m.desc}</span>`);
     });
-  } else {
-    setTimeout(() => tripMap.invalidateSize(), 100);
+    setTimeout(() => { if (tripMap) tripMap.invalidateSize(); }, 150);
+  } catch (e) {
+    console.error("地圖初始化失敗：", e);
+    const wrap = document.getElementById("mapWrap");
+    if (wrap) wrap.innerHTML = `<div style="padding:34px 16px;text-align:center;color:#94897a;font-size:12px;line-height:1.6;">⚠️ 地圖載入發生錯誤<br/>請重新整理頁面再試一次</div>`;
   }
 }
 function toggleMapFullscreen() {
@@ -364,6 +394,7 @@ function toggleMapFullscreen() {
 document.addEventListener("fullscreenchange", () => { if (tripMap) setTimeout(() => tripMap.invalidateSize(), 200); });
 document.addEventListener("webkitfullscreenchange", () => { if (tripMap) setTimeout(() => tripMap.invalidateSize(), 200); });
 function locateMe() {
+  if (!tripMap) return;
   if (!navigator.geolocation) { alert("此裝置或瀏覽器不支援定位功能"); return; }
   navigator.geolocation.getCurrentPosition((pos) => {
     const { latitude, longitude } = pos.coords;
@@ -373,22 +404,83 @@ function locateMe() {
   }, (err) => { alert("無法取得目前位置：" + (err.message || "請確認已允許定位權限")); }, { enableHighAccuracy: true, timeout: 8000 });
 }
 
-/* ===================== 記帳 ===================== */
+/* ===================== 記帳（新增：支出分類＋各夥伴/各分類總覽） ===================== */
+function computeMemberTotals() {
+  const totals = Object.fromEntries(state.members.map((m) => [m, 0]));
+  state.expenses.forEach((e) => { if (totals[e.paidBy] !== undefined) totals[e.paidBy] += e.amount; });
+  return totals;
+}
+function computeCategoryTotals() {
+  const totals = Object.fromEntries(EXPENSE_CATEGORIES.map((c) => [c.id, 0]));
+  state.expenses.forEach((e) => { const cid = e.category || "other"; totals[cid] = (totals[cid] || 0) + e.amount; });
+  return totals;
+}
+function renderExpenseSummary() {
+  const memberTotals = computeMemberTotals();
+  const categoryTotals = computeCategoryTotals();
+  const maxMember = Math.max(1, ...Object.values(memberTotals));
+  const maxCategory = Math.max(1, ...Object.values(categoryTotals));
+  const view = state.expenseSummaryView;
+
+  const memberRows = state.members.map((m, i) => {
+    const val = memberTotals[m] || 0;
+    const pct = Math.round((val / maxMember) * 100);
+    const color = CATEGORY_COLOR_POOL[i % CATEGORY_COLOR_POOL.length];
+    return `
+      <div class="summary-row">
+        <span class="summary-icon" style="background:${color}">${m[0]}</span>
+        <div class="summary-info">
+          <div class="summary-label-row"><span>${m}</span><b>${val.toLocaleString()} 元</b></div>
+          <div class="summary-bar-track"><div class="summary-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+        </div>
+      </div>`;
+  }).join("");
+
+  const categoryRows = EXPENSE_CATEGORIES.filter((c) => categoryTotals[c.id] > 0).map((c) => {
+    const val = categoryTotals[c.id] || 0;
+    const pct = Math.round((val / maxCategory) * 100);
+    return `
+      <div class="summary-row">
+        <span class="summary-icon" style="background:${c.color}">${c.icon}</span>
+        <div class="summary-info">
+          <div class="summary-label-row"><span>${c.label}</span><b>${val.toLocaleString()} 元</b></div>
+          <div class="summary-bar-track"><div class="summary-bar-fill" style="width:${pct}%;background:${c.color}"></div></div>
+        </div>
+      </div>`;
+  }).join("") || `<p class="loading-hint">尚無分類支出</p>`;
+
+  return `
+    <div class="card">
+      <h2>📊 支出總覽</h2>
+      <div class="summary-tabs">
+        <button class="summary-tab-btn ${view === "member" ? "active" : ""}" onclick="setExpenseSummaryView('member')">👥 各夥伴支出</button>
+        <button class="summary-tab-btn ${view === "category" ? "active" : ""}" onclick="setExpenseSummaryView('category')">🏷️ 各分類支出</button>
+      </div>
+      ${view === "member" ? memberRows : categoryRows}
+    </div>`;
+}
+window.setExpenseSummaryView = function (v) { state.expenseSummaryView = v; render(); };
+
 function renderExpense() {
   const d = state.expenseDraft;
   const membersHtml = state.members.map((m) => `<span class="chip">${m}<button onclick="removeMember('${m}')">✕</button></span>`).join("");
   const splitHtml = state.members.map((m) => `<button class="chip split ${d.split.includes(m) ? "active" : ""}" onclick="toggleSplit('${m}')">${m}</button>`).join("");
   const paidByOptions = state.members.map((m) => `<option value="${m}" ${d.paidBy === m ? "selected" : ""}>${m}</option>`).join("");
+  const categoryOptions = EXPENSE_CATEGORIES.map((c) => `<option value="${c.id}" ${d.category === c.id ? "selected" : ""}>${c.icon} ${c.label}</option>`).join("");
   const total = state.expenses.reduce((s, e) => s + e.amount, 0);
-  const listHtml = state.expenses.map((e) => `
+  const listHtml = state.expenses.map((e) => {
+    const cat = expenseCategoryOf(e.category);
+    return `
       <div class="expense-item">
-        <div><div>${e.desc}</div><p class="meta">${e.paidBy} 代墊 ‧ ${e.split.length} 人均分</p></div>
+        <div><div>${cat.icon} ${e.desc}</div><p class="meta">${e.paidBy} 代墊 ‧ ${cat.label} ‧ ${e.split.length} 人均分</p></div>
         <div style="display:flex;align-items:center;">
           <span class="amt">${e.amount.toLocaleString()}</span>
           <button onclick="deleteExpense(${e.id})">🗑</button>
         </div>
-      </div>`).join("");
+      </div>`;
+  }).join("");
   const balances = computeBalances();
+
   return `
     <div class="card">
       <h2>👥 同行夥伴</h2>
@@ -405,11 +497,15 @@ function renderExpense() {
         <input id="amountInput" type="number" placeholder="金額" value="${d.amount}" oninput="state.expenseDraft.amount=this.value" />
         <select onchange="state.expenseDraft.paidBy=this.value">${paidByOptions}</select>
       </div>
+      <div class="row">
+        <select onchange="state.expenseDraft.category=this.value">${categoryOptions}</select>
+      </div>
       <p style="font-size:11px;color:#94897a;margin:4px 0;">由誰均分？</p>
       <div class="chip-row">${splitHtml}</div>
       <button class="btn btn-primary" onclick="addExpense()">加入這筆支出</button>
     </div>
     ${state.expenses.length ? `<div class="card"><h2>📋 支出紀錄（共計 ${total.toLocaleString()}）</h2>${listHtml}</div>` : ""}
+    ${state.expenses.length ? renderExpenseSummary() : ""}
     ${state.expenses.length ? `
       <div class="card balance-card">
         <h2 style="color:#C79A3C;">🔁 分帳結果</h2>
@@ -457,7 +553,7 @@ window.toggleSplit = function (name) {
 window.addExpense = function () {
   const d = state.expenseDraft; const amt = parseFloat(d.amount);
   if (!d.desc.trim() || !amt || amt <= 0 || d.split.length === 0) return;
-  state.expenses.unshift({ id: Date.now(), desc: d.desc.trim(), amount: amt, paidBy: d.paidBy, split: [...d.split] });
+  state.expenses.unshift({ id: Date.now(), desc: d.desc.trim(), amount: amt, paidBy: d.paidBy, split: [...d.split], category: d.category || "other" });
   saveJSON("trip-expenses", state.expenses);
   state.expenseDraft.desc = ""; state.expenseDraft.amount = ""; render();
 };
@@ -466,7 +562,7 @@ window.deleteExpense = function (id) {
   saveJSON("trip-expenses", state.expenses); render();
 };
 
-/* ===================== 相簿（上傳者本人才能刪除） ===================== */
+/* ===================== 相簿 ===================== */
 function renderAlbum() {
   const photosHtml = state.albumPhotos.map((p) => `
     <div class="photo-cell" data-id="${p.id}">
@@ -514,7 +610,7 @@ function addPhotosFromFileList(fileList) {
 }
 function deleteAlbumPhoto(id) {
   const photo = state.albumPhotos.find((p) => String(p.id) === String(id));
-  if (!photo || photo.uploader !== "我") return; // 權限檢查：僅上傳者本人可刪除
+  if (!photo || photo.uploader !== "我") return;
   if (!confirm("確定要刪除這張照片嗎？")) return;
   state.albumPhotos = state.albumPhotos.filter((p) => String(p.id) !== String(id));
   saveJSON("trip-album-photos", state.albumPhotos);
@@ -531,9 +627,7 @@ function wireAlbumEvents() {
   if (galleryBtn) galleryBtn.onclick = () => galleryInput.click();
   if (galleryInput) galleryInput.onchange = (e) => { addPhotosFromFileList(e.target.files); e.target.value = ""; };
 
-  document.querySelectorAll(".photo-delete").forEach((btn) => {
-    btn.onclick = (e) => { e.stopPropagation(); deleteAlbumPhoto(btn.dataset.id); };
-  });
+  document.querySelectorAll(".photo-delete").forEach((btn) => { btn.onclick = (e) => { e.stopPropagation(); deleteAlbumPhoto(btn.dataset.id); }; });
   document.querySelectorAll(".photo-cell").forEach((cell) => { cell.onclick = () => openLightbox(cell.dataset.id); });
   const closeBtn = document.getElementById("lightboxClose");
   if (closeBtn) closeBtn.onclick = closeLightbox;
@@ -594,7 +688,7 @@ function renderGuide() {
     ${cityAccordion}`;
 }
 
-/* ===================== 清單（可自訂新增分類） ===================== */
+/* ===================== 清單 ===================== */
 function renderChecklist() {
   const allCategories = [...CHECKLIST_CATEGORIES, ...state.customCategories];
   const total = state.checklistItems.length;
@@ -938,7 +1032,7 @@ window.translatePhrase = function (i) {
   render();
 };
 
-/* ===================== 匯率換算（修正：金額輸入不再整頁重繪，游標不會跳走） ===================== */
+/* ===================== 匯率換算 ===================== */
 function currencyRowsHTML() {
   const amountUSD = (parseFloat(state.amount) || 0) / (state.rates[state.base] || 1);
   return CURRENCIES.filter((c) => c !== state.base).map((c) => {
