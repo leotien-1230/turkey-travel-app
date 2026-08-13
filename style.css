@@ -19,7 +19,6 @@ main#content { flex: 1; padding: 16px 16px 90px; }
 .card h2 { font-size: 13px; font-weight: 600; margin: 0 0 10px; color: var(--turquoise); display: flex; align-items: center; gap: 6px; }
 .card.dark { background: linear-gradient(160deg, var(--night), var(--night-soft)); border: none; color: #fff; }
 
-/* 天氣 / 目前位置 / 熱氣球 */
 .current-location-weather { margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
 .locate-weather-btn { flex: 1; background: var(--sand); border: 1px dashed var(--sand-deep); border-radius: 10px; padding: 9px; font-size: 12px; color: #6b6154; cursor: pointer; }
 .weather-chip.current { background: var(--turquoise-soft); color: var(--turquoise); font-weight: 600; flex: 1; }
@@ -34,7 +33,6 @@ main#content { flex: 1; padding: 16px 16px 90px; }
 .balloon-alert.warn .balloon-title { color: var(--terracotta); }
 .balloon-sub { font-size: 11px; color: #6b6154; margin: 3px 0 0; line-height: 1.5; }
 
-/* 地圖 */
 .map-wrap { position: relative; border-radius: 18px; overflow: hidden; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.06); min-height: 260px; }
 #tripMap { width: 100%; height: 260px; background: var(--sand-deep); }
 .map-wrap:fullscreen, .map-wrap:-webkit-full-screen { border-radius: 0; }
@@ -45,7 +43,6 @@ main#content { flex: 1; padding: 16px 16px 90px; }
 .map-legend span { display: flex; align-items: center; gap: 4px; background: rgba(255,255,255,.95); border-radius: 999px; padding: 3px 8px; font-size: 10px; }
 .legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 
-/* itinerary day cards */
 .day-card summary { display: flex; align-items: center; gap: 10px; cursor: pointer; list-style: none; padding: 2px 0; }
 .day-card summary::-webkit-details-marker { display: none; }
 .day-badge { width: 40px; height: 40px; border-radius: 12px; background: var(--turquoise); color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 10px; flex-shrink: 0; }
@@ -58,7 +55,6 @@ main#content { flex: 1; padding: 16px 16px 90px; }
 .meals { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
 .meal-chip { background: var(--sand); border-radius: 8px; padding: 4px 8px; font-size: 11px; flex: 1; min-width: 70px; }
 
-/* expense */
 .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .chip { background: var(--turquoise-soft); color: var(--turquoise); border-radius: 999px; padding: 4px 10px 4px 12px; font-size: 12px; display: flex; align-items: center; gap: 6px; border: none; }
 .chip button { background: none; border: none; color: inherit; cursor: pointer; font-size: 12px; }
@@ -80,7 +76,6 @@ input, select { border: 1px solid var(--sand-deep); border-radius: 10px; padding
 .settle-row { font-size: 12px; display: flex; gap: 6px; align-items: center; padding: 4px 0; border-top: 1px solid rgba(255,255,255,.12); margin-top: 6px; }
 .settle-row .amt { margin-left: auto; color: var(--gold); font-weight: 600; }
 
-/* 支出總覽（各夥伴／各分類長條圖） */
 .summary-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
 .summary-tab-btn { flex: 1; background: var(--sand); border: none; border-radius: 999px; padding: 6px; font-size: 11.5px; color: #94897a; cursor: pointer; }
 .summary-tab-btn.active { background: var(--turquoise); color: #fff; }
@@ -93,7 +88,6 @@ input, select { border: 1px solid var(--sand-deep); border-radius: 10px; padding
 .summary-bar-track { height: 6px; border-radius: 999px; background: var(--sand); overflow: hidden; }
 .summary-bar-fill { height: 100%; border-radius: 999px; transition: width .3s; }
 
-/* currency */
 .currency-row { display: flex; align-items: center; justify-content: space-between; background: var(--sand); border-radius: 10px; padding: 8px 12px; margin-bottom: 6px; cursor: pointer; border: none; width: 100%; font-size: 13px; }
 .currency-row .code { width: 32px; height: 32px; border-radius: 50%; background: var(--gold); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 10px; margin-right: 8px; flex-shrink: 0; }
 .currency-left { display: flex; align-items: center; color: #6b6154; }
@@ -104,11 +98,9 @@ input, select { border: 1px solid var(--sand-deep); border-radius: 10px; padding
 .rate-updated { font-size: 10px; color: #94897a; }
 .refresh-btn { background: none; border: 1px solid var(--sand-deep); border-radius: 999px; padding: 3px 10px; font-size: 10.5px; color: var(--turquoise); cursor: pointer; }
 
-/* notes */
 .note-list { margin: 0; padding-left: 18px; font-size: 12.5px; line-height: 1.6; color: #4b4438; }
 .note-list li { margin-bottom: 4px; }
 
-/* bottom nav */
 .bottom-nav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 480px; display: grid; grid-template-columns: repeat(7, 1fr); background: var(--night); border-top: 1px solid rgba(255,255,255,.08); }
 .nav-btn { background: none; border: none; color: rgba(255,255,255,.55); display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 0; font-size: 8.5px; cursor: pointer; }
 .nav-icon { font-size: 15px; }
@@ -117,7 +109,6 @@ input, select { border: 1px solid var(--sand-deep); border-radius: 10px; padding
 .section-label { font-size: 12px; font-weight: 600; color: var(--terracotta); padding: 0 2px; margin: 4px 0; }
 .section-hint { font-size: 11px; color: #94897a; padding: 0 2px; margin: 10px 0 4px; }
 
-/* album */
 .album-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; gap: 8px; }
 .album-title { font-size: 13.5px; font-weight: 600; margin: 0; }
 .album-sub { font-size: 11px; color: #94897a; margin: 2px 0 0; }
@@ -146,7 +137,6 @@ input, select { border: 1px solid var(--sand-deep); border-radius: 10px; padding
 .lightbox-city { color: rgba(255,255,255,.5) !important; font-size: 11px !important; margin-top: 1px !important; }
 .lightbox-close { position: absolute; top: 18px; right: 18px; background: none; border: none; color: rgba(255,255,255,.8); font-size: 20px; cursor: pointer; z-index: 1001; }
 
-/* guide */
 .spot-card { background: #fff; border: 1px solid var(--sand-deep); border-radius: 16px; overflow: hidden; margin-bottom: 10px; }
 .spot-card-head { padding: 14px 14px 8px; }
 .spot-name { font-size: 13.5px; font-weight: 600; margin: 0; }
@@ -168,7 +158,6 @@ input, select { border: 1px solid var(--sand-deep); border-radius: 10px; padding
 .guide-list { margin: 0; padding: 0; list-style: none; font-size: 12px; color: #4b4438; line-height: 1.7; }
 .food-tag { font-size: 10.5px; padding: 3px 8px; border-radius: 8px; background: var(--terracotta-soft); color: var(--terracotta); margin-right: 4px; display: inline-block; margin-bottom: 4px; }
 
-/* checklist */
 .checklist-progress-head { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
 .checklist-progress-head span { font-size: 11px; font-weight: 400; color: #94897a; }
 .progress-track { height: 8px; border-radius: 999px; background: var(--sand); overflow: hidden; }
@@ -184,7 +173,6 @@ input, select { border: 1px solid var(--sand-deep); border-radius: 10px; padding
 .checklist-add-category-row { margin-top: 4px !important; }
 .checklist-add-category-row input { font-size: 12px; }
 
-/* tools */
 .tool-title { font-size: 12.5px; font-weight: 600; margin: 0 0 10px; display: flex; align-items: center; gap: 6px; }
 .tool-title.gold { color: var(--gold); }
 .tool-title-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
@@ -201,7 +189,7 @@ input, select { border: 1px solid var(--sand-deep); border-radius: 10px; padding
 .result-card.original { background: var(--sand); border: 1px solid var(--sand-deep); }
 .result-card.translated { background: var(--turquoise-soft); }
 .result-label { font-size: 10.5px; font-weight: 600; color: #94897a; margin: 0 0 6px; }
-.result-text { font-size: 13px; line-height: 1.6; margin: 0; color: var(--ink); }
+.result-text { font-size: 13px; line-height: 1.6; margin: 0; color: var(--ink); white-space: pre-wrap; }
 .mic-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px 0; }
 .mic-wrap.small { padding: 4px 0 8px; }
 .mic-btn { position: relative; width: 72px; height: 72px; border-radius: 50%; border: none; cursor: pointer; font-size: 26px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--turquoise), var(--gold)); color: #fff; }
