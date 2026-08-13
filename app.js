@@ -365,4 +365,829 @@ function initOrUpdateMap() {
   const mapEl = document.getElementById("tripMap");
   if (!mapEl) return;
   if (typeof L === "undefined") {
-    mapEl.parentElement.innerHTML =
+    mapEl.parentElement.innerHTML = `<div style="padding:34px 16px;text-align:center;color:#94897a;font-size:12px;line-height:1.6;">⚠️ 地圖套件（Leaflet）載入失敗<br/>請確認網路連線後重新整理頁面再試一次</div>`;
+    return;
+  }
+  if (tripMap) {
+    try { tripMap.remove(); } catch (e) { console.warn("清除舊地圖時發生小狀況：", e); }
+    tripMap = null; tripMapLayer = null; userLocationMarker = null;
+  }
+  try {
+    tripMap = L.map("tripMap", { zoomControl: true }).setView([38.9, 32.6], 6);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    }).addTo(tripMap);
+    tripMapLayer = L.layerGroup().addTo(tripMap);
+    ALL_MAP_MARKERS.forEach((m) => {
+      const color = m.category === "food" ? "#FF8C00" : "#4285F4";
+      const marker = L.circleMarker([m.lat, m.lng], { radius: 8, color: "#fff", weight: 2, fillColor: color, fillOpacity: 1 }).addTo(tripMapLayer);
+      marker.bindPopup(`<b>${m.category === "food" ? "🍽️" : "📍"} ${m.name}</b><br/><span style="font-size:12px;color:#555;">${m.desc}</span>`);
+    });
+    setTimeout(() => { if (tripMap) tripMap.invalidateSize(); }, 150);
+  } catch (e) {
+    console.error("地圖初始化失敗：", e);
+    const wrap = document.getElementById("mapWrap");
+    if (wrap) wrap.innerHTML = `<div style="padding:34px 16px;text-align:center;color:#94897a;font-size:12px;line-height:1.6;">⚠️ 地圖載入發生錯誤<br/>請重新整理頁面再試一次</div>`;
+  }
+}
+function toggleMapFullscreen() {
+  const wrap = document.getElementById("mapWrap");
+  if (!wrap) return;
+  const isFs = document.fullscreenElement || document.webkitFullscreenElement;
+  if (!isFs) { (wrap.requestFullscreen || wrap.webkitRequestFullscreen || wrap.msRequestFullscreen || function () {}).call(wrap); }
+  else { (document.exitFullscreen || document.webkitExitFullscreen || function () {}).call(document); }
+}
+document.addEventListener("fullscreenchange", () => { if (tripMap) setTimeout(() => tripMap.invalidateSize(), 200); });
+document.addEventListener("webkitfullscreenchange", () => { if (tripMap) setTimeout(() => tripMap.invalidateSize(), 200); });
+function locateMe() {
+  if (!tripMap) return;
+  if (!navigator.geolocation) { alert("此裝置或瀏覽器不支援定位功能"); return; }
+  navigator.geolocation.getCurrentPosition((pos) => {
+    const { latitude, longitude } = pos.coords;
+    if (userLocationMarker) tripMap.removeLayer(userLocationMarker);
+    userLocationMarker = L.circleMarker([latitude, longitude], { radius: 8, color: "#fff", weight: 3, fillColor: "#12857F", fillOpacity: 1 }).addTo(tripMap).bindPopup("📍 你目前的位置").openPopup();
+    tripMap.setView([latitude, longitude], 12);
+  }, (err) => { alert("無法取得目前位置：" + (err.message || "請確認已允許定位權限")); }, { enableHighAccuracy: true, timeout: 8000 });
+}
+
+/* ===================== 記帳 ===================== */
+function computeMemberTotals() {
+  const totals = Object.fromEntries(state.members.map((m) => [m, 0]));
+  state.expenses.forEach((e) => { if (totals[e.paidBy] !== undefined) totals[e.paidBy] += e.amount; });
+  return totals;
+}
+function computeCategoryTotals() {
+  const totals = Object.fromEntries(EXPENSE_CATEGORIES.map((c) => [c.id, 0]));
+  state.expenses.forEach((e) => { const cid = e.category || "other"; totals[cid] = (totals[cid] || 0) + e.amount; });
+  return totals;
+}
+function renderExpenseSummary() {
+  const memberTotals = computeMemberTotals();
+  const categoryTotals = computeCategoryTotals();
+  const maxMember = Math.max(1, ...Object.values(memberTotals));
+  const maxCategory = Math.max(1, ...Object.values(categoryTotals));
+  const view = state.expenseSummaryView;
+
+  const memberRows = state.members.map((m, i) => {
+    const val = memberTotals[m] || 0;
+    const pct = Math.round((val / maxMember) * 100);
+    const color = CATEGORY_COLOR_POOL[i % CATEGORY_COLOR_POOL.length];
+    return `
+      <div class="summary-row">
+        <span class="summary-icon" style="background:${color}">${m[0]}</span>
+        <div class="summary-info">
+          <div class="summary-label-row"><span>${m}</span><b>${val.toLocaleString()} 元</b></div>
+          <div class="summary-bar-track"><div class="summary-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+        </div>
+      </div>`;
+  }).join("");
+
+  const categoryRows = EXPENSE_CATEGORIES.filter((c) => categoryTotals[c.id] > 0).map((c) => {
+    const val = categoryTotals[c.id] || 0;
+    const pct = Math.round((val / maxCategory) * 100);
+    return `
+      <div class="summary-row">
+        <span class="summary-icon" style="background:${c.color}">${c.icon}</span>
+        <div class="summary-info">
+          <div class="summary-label-row"><span>${c.label}</span><b>${val.toLocaleString()} 元</b></div>
+          <div class="summary-bar-track"><div class="summary-bar-fill" style="width:${pct}%;background:${c.color}"></div></div>
+        </div>
+      </div>`;
+  }).join("") || `<p class="loading-hint">尚無分類支出</p>`;
+
+  return `
+    <div class="card">
+      <h2>📊 支出總覽</h2>
+      <div class="summary-tabs">
+        <button class="summary-tab-btn ${view === "member" ? "active" : ""}" onclick="setExpenseSummaryView('member')">👥 各夥伴支出</button>
+        <button class="summary-tab-btn ${view === "category" ? "active" : ""}" onclick="setExpenseSummaryView('category')">🏷️ 各分類支出</button>
+      </div>
+      ${view === "member" ? memberRows : categoryRows}
+    </div>`;
+}
+window.setExpenseSummaryView = function (v) { state.expenseSummaryView = v; render(); };
+
+function renderExpense() {
+  const d = state.expenseDraft;
+  const membersHtml = state.members.map((m) => `<span class="chip">${m}<button onclick="removeMember('${m}')">✕</button></span>`).join("");
+  const splitHtml = state.members.map((m) => `<button class="chip split ${d.split.includes(m) ? "active" : ""}" onclick="toggleSplit('${m}')">${m}</button>`).join("");
+  const paidByOptions = state.members.map((m) => `<option value="${m}" ${d.paidBy === m ? "selected" : ""}>${m}</option>`).join("");
+  const categoryOptions = EXPENSE_CATEGORIES.map((c) => `<option value="${c.id}" ${d.category === c.id ? "selected" : ""}>${c.icon} ${c.label}</option>`).join("");
+  const total = state.expenses.reduce((s, e) => s + e.amount, 0);
+  const listHtml = state.expenses.map((e) => {
+    const cat = expenseCategoryOf(e.category);
+    return `
+      <div class="expense-item">
+        <div><div>${cat.icon} ${e.desc}</div><p class="meta">${e.paidBy} 代墊 ‧ ${cat.label} ‧ ${e.split.length} 人均分</p></div>
+        <div style="display:flex;align-items:center;">
+          <span class="amt">${e.amount.toLocaleString()}</span>
+          <button onclick="deleteExpense(${e.id})">🗑</button>
+        </div>
+      </div>`;
+  }).join("");
+  const balances = computeBalances();
+
+  return `
+    <div class="card">
+      <h2>👥 同行夥伴</h2>
+      <div class="chip-row">${membersHtml}</div>
+      <div class="row">
+        <input id="newMemberInput" placeholder="新增夥伴名字" onkeydown="if(event.key==='Enter')addMember()" />
+        <button class="btn-add" onclick="addMember()">＋</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>➕ 新增支出</h2>
+      <input id="descInput" placeholder="項目（例如：晚餐／計程車）" value="${d.desc}" oninput="state.expenseDraft.desc=this.value" style="margin-bottom:8px;" />
+      <div class="row">
+        <input id="amountInput" type="number" placeholder="金額" value="${d.amount}" oninput="state.expenseDraft.amount=this.value" />
+        <select onchange="state.expenseDraft.paidBy=this.value">${paidByOptions}</select>
+      </div>
+      <div class="row">
+        <select onchange="state.expenseDraft.category=this.value">${categoryOptions}</select>
+      </div>
+      <p style="font-size:11px;color:#94897a;margin:4px 0;">由誰均分？</p>
+      <div class="chip-row">${splitHtml}</div>
+      <button class="btn btn-primary" onclick="addExpense()">加入這筆支出</button>
+    </div>
+    ${state.expenses.length ? `<div class="card"><h2>📋 支出紀錄（共計 ${total.toLocaleString()}）</h2>${listHtml}</div>` : ""}
+    ${state.expenses.length ? renderExpenseSummary() : ""}
+    ${state.expenses.length ? `
+      <div class="card balance-card">
+        <h2 style="color:#C79A3C;">🔁 分帳結果</h2>
+        ${Object.entries(balances.net).map(([m, v]) => `<div class="balance-row"><span>${m}</span><span class="${v >= 0 ? "balance-pos" : "balance-neg"}">${v >= 0 ? "應收回 " : "應支付 "}${Math.abs(v).toFixed(0)} 元</span></div>`).join("")}
+        ${balances.settlements.length ? balances.settlements.map((s) => `<div class="settle-row">💰 ${s.from} 付給 ${s.to}<span class="amt">${s.amt.toFixed(0)} 元</span></div>`).join("") : `<p style="font-size:12px;color:rgba(255,255,255,.5);">目前帳務已平衡 🎉</p>`}
+      </div>` : ""}
+  `;
+}
+function computeBalances() {
+  const net = Object.fromEntries(state.members.map((m) => [m, 0]));
+  state.expenses.forEach((e) => {
+    const share = e.amount / e.split.length;
+    if (net[e.paidBy] !== undefined) net[e.paidBy] += e.amount;
+    e.split.forEach((p) => { if (net[p] !== undefined) net[p] -= share; });
+  });
+  const creditors = Object.entries(net).filter(([, v]) => v > 0.5).map(([n, v]) => ({ n, v })).sort((a, b) => b.v - a.v);
+  const debtors = Object.entries(net).filter(([, v]) => v < -0.5).map(([n, v]) => ({ n, v: -v })).sort((a, b) => b.v - a.v);
+  const settlements = []; let i = 0, j = 0;
+  while (i < creditors.length && j < debtors.length) {
+    const pay = Math.min(creditors[i].v, debtors[j].v);
+    settlements.push({ from: debtors[j].n, to: creditors[i].n, amt: pay });
+    creditors[i].v -= pay; debtors[j].v -= pay;
+    if (creditors[i].v < 0.5) i++; if (debtors[j].v < 0.5) j++;
+  }
+  return { net, settlements };
+}
+window.addMember = function () {
+  const input = document.getElementById("newMemberInput");
+  const name = input.value.trim();
+  if (!name || state.members.includes(name)) return;
+  state.members.push(name); state.expenseDraft.split.push(name);
+  saveJSON("trip-members", state.members); render();
+};
+window.removeMember = function (name) {
+  state.members = state.members.filter((m) => m !== name);
+  state.expenseDraft.split = state.expenseDraft.split.filter((m) => m !== name);
+  if (state.expenseDraft.paidBy === name) state.expenseDraft.paidBy = state.members[0];
+  saveJSON("trip-members", state.members); render();
+};
+window.toggleSplit = function (name) {
+  const s = state.expenseDraft.split;
+  state.expenseDraft.split = s.includes(name) ? s.filter((m) => m !== name) : [...s, name];
+  render();
+};
+window.addExpense = function () {
+  const d = state.expenseDraft; const amt = parseFloat(d.amount);
+  if (!d.desc.trim() || !amt || amt <= 0 || d.split.length === 0) return;
+  state.expenses.unshift({ id: Date.now(), desc: d.desc.trim(), amount: amt, paidBy: d.paidBy, split: [...d.split], category: d.category || "other" });
+  saveJSON("trip-expenses", state.expenses);
+  state.expenseDraft.desc = ""; state.expenseDraft.amount = ""; render();
+};
+window.deleteExpense = function (id) {
+  state.expenses = state.expenses.filter((e) => e.id !== id);
+  saveJSON("trip-expenses", state.expenses); render();
+};
+
+/* ===================== 相簿 ===================== */
+function renderAlbum() {
+  const photosHtml = state.albumPhotos.map((p) => `
+    <div class="photo-cell" data-id="${p.id}">
+      <img src="${p.url}" alt="${p.city || ""}" loading="lazy"
+           onload="this.parentElement.classList.add('loaded')"
+           onerror="this.parentElement.classList.add('error')" />
+      <div class="photo-placeholder">🖼️</div>
+      ${p.isNew ? '<span class="photo-new">NEW</span>' : ""}
+      ${p.uploader === "我" ? `<button class="photo-delete" data-id="${p.id}" title="刪除照片">🗑</button>` : ""}
+      <div class="photo-caption">${p.uploader}</div>
+    </div>`).join("");
+
+  return `
+    <div class="album-header">
+      <div><p class="album-title">旅程相簿</p><p class="album-sub">${state.albumPhotos.length} 張夥伴共享的回憶（僅上傳者本人可刪除自己的照片）</p></div>
+      <div class="album-actions">
+        <button class="fab camera" id="albumCameraBtn" title="拍照">📷</button>
+        <button class="fab gallery" id="albumGalleryBtn" title="從裝置選擇檔案">🖼️</button>
+      </div>
+      <input type="file" id="albumCameraInput" accept="image/*" capture="environment" style="display:none" />
+      <input type="file" id="albumGalleryInput" accept="image/*" multiple style="display:none" />
+    </div>
+    <div class="photo-grid">${photosHtml}</div>
+    <div class="lightbox" id="lightbox">
+      <button class="lightbox-close" id="lightboxClose">✕</button>
+      <div class="lightbox-content">
+        <img id="lightboxImg" src="" alt="" />
+        <div class="lightbox-caption">
+          <span class="avatar" id="lightboxAvatar"></span>
+          <div><p id="lightboxUploader"></p><p id="lightboxCity" class="lightbox-city"></p></div>
+        </div>
+      </div>
+    </div>`;
+}
+function addPhotosFromFileList(fileList) {
+  Array.from(fileList).forEach((file) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      state.albumPhotos.unshift({ id: "u-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6), uploader: "我", city: "剛剛上傳", url: reader.result, isNew: true });
+      saveJSON("trip-album-photos", state.albumPhotos);
+      render();
+    };
+    reader.readAsDataURL(file);
+  });
+}
+function deleteAlbumPhoto(id) {
+  const photo = state.albumPhotos.find((p) => String(p.id) === String(id));
+  if (!photo || photo.uploader !== "我") return;
+  if (!confirm("確定要刪除這張照片嗎？")) return;
+  state.albumPhotos = state.albumPhotos.filter((p) => String(p.id) !== String(id));
+  saveJSON("trip-album-photos", state.albumPhotos);
+  render();
+}
+function wireAlbumEvents() {
+  const cameraBtn = document.getElementById("albumCameraBtn");
+  const cameraInput = document.getElementById("albumCameraInput");
+  if (cameraBtn) cameraBtn.onclick = () => cameraInput.click();
+  if (cameraInput) cameraInput.onchange = (e) => { addPhotosFromFileList(e.target.files); e.target.value = ""; };
+
+  const galleryBtn = document.getElementById("albumGalleryBtn");
+  const galleryInput = document.getElementById("albumGalleryInput");
+  if (galleryBtn) galleryBtn.onclick = () => galleryInput.click();
+  if (galleryInput) galleryInput.onchange = (e) => { addPhotosFromFileList(e.target.files); e.target.value = ""; };
+
+  document.querySelectorAll(".photo-delete").forEach((btn) => { btn.onclick = (e) => { e.stopPropagation(); deleteAlbumPhoto(btn.dataset.id); }; });
+  document.querySelectorAll(".photo-cell").forEach((cell) => { cell.onclick = () => openLightbox(cell.dataset.id); });
+  const closeBtn = document.getElementById("lightboxClose");
+  if (closeBtn) closeBtn.onclick = closeLightbox;
+  const lb = document.getElementById("lightbox");
+  if (lb) lb.onclick = (e) => { if (e.target === lb) closeLightbox(); };
+}
+function openLightbox(id) {
+  const photo = state.albumPhotos.find((p) => String(p.id) === String(id));
+  if (!photo) return;
+  document.getElementById("lightboxImg").src = photo.url;
+  document.getElementById("lightboxAvatar").textContent = (photo.uploader || "?")[0];
+  document.getElementById("lightboxUploader").textContent = photo.uploader;
+  document.getElementById("lightboxCity").textContent = photo.city || "";
+  document.getElementById("lightbox").classList.add("open");
+}
+function closeLightbox() { document.getElementById("lightbox").classList.remove("open"); }
+
+/* ===================== 推薦 ===================== */
+function tagPillHtml(tag) {
+  const s = SPOT_TAG_STYLE[tag] || { emoji: "⭐", bg: "#f6efdf", fg: "#94897a" };
+  return `<span class="tag-pill" style="background:${s.bg};color:${s.fg};">${s.emoji} ${tag}</span>`;
+}
+function renderGuide() {
+  const spotCards = POPULAR_SPOTS.map((spot) => `
+    <div class="spot-card">
+      <div class="spot-card-head">
+        <p class="spot-name">${spot.name}</p>
+        <div class="tag-row">${spot.tags.map(tagPillHtml).join("")}</div>
+      </div>
+      <div class="spot-card-body">
+        <p class="spot-photo-label">📷 地標實拍照</p>
+        <div class="spot-photo-grid">
+          ${spot.photos.map((url) => `
+            <div class="photo-cell">
+              <img src="${url}" loading="lazy" onload="this.parentElement.classList.add('loaded')" onerror="this.parentElement.classList.add('error')" />
+              <div class="photo-placeholder">🖼️</div>
+            </div>`).join("")}
+        </div>
+        <p class="photo-credit">照片來源：Wikimedia Commons（CC 授權）</p>
+      </div>
+    </div>`).join("");
+
+  const cityAccordion = GUIDE.map((g, idx) => `
+    <details class="card guide-city" ${idx === 0 ? "open" : ""}>
+      <summary><span class="sparkle">✨</span><div><p class="guide-city-name">${g.city}</p><p class="guide-city-year">${g.year}</p></div></summary>
+      <div class="guide-detail">
+        <p class="guide-sub-title spot">📍 必訪景點</p>
+        <ul class="guide-list">${g.spots.map((s) => `<li>◆ ${s}</li>`).join("")}</ul>
+        <p class="guide-sub-title food">🍽️ 在地美食</p>
+        <div class="tag-row">${g.food.map((f) => `<span class="food-tag">${f}</span>`).join("")}</div>
+      </div>
+    </details>`).join("");
+
+  return `
+    <p class="section-label">熱門景點打卡牆</p>
+    ${spotCards}
+    <p class="section-hint">世界三大菜系之一．依城市探索景點與在地美食</p>
+    ${cityAccordion}`;
+}
+
+/* ===================== 清單 ===================== */
+function renderChecklist() {
+  const allCategories = [...CHECKLIST_CATEGORIES, ...state.customCategories];
+  const total = state.checklistItems.length;
+  const done = state.checklistItems.filter((i) => i.checked).length;
+  const percent = total ? Math.round((done / total) * 100) : 0;
+
+  const catBlocks = allCategories.map((cat) => {
+    const items = state.checklistItems.filter((i) => i.category === cat.id);
+    if (!items.length) return "";
+    return `
+      <div class="card">
+        <p class="checklist-cat-title" style="color:${cat.color}">${cat.icon} ${cat.label}
+          <span class="checklist-cat-count">${items.filter((i) => i.checked).length}/${items.length}</span>
+        </p>
+        <ul class="checklist-list">
+          ${items.map((item) => `
+            <li class="checklist-item">
+              <input type="checkbox" ${item.checked ? "checked" : ""} onchange="toggleChecklistItem('${item.id}')" />
+              <span class="checklist-text ${item.checked ? "done" : ""}">${item.text}</span>
+              <button class="checklist-delete" onclick="deleteChecklistItem('${item.id}')">🗑</button>
+            </li>`).join("")}
+        </ul>
+      </div>`;
+  }).join("");
+
+  const catOptions = allCategories.map((c) => `<option value="${c.id}" ${state.checklistDraft.category === c.id ? "selected" : ""}>${c.label}</option>`).join("");
+
+  return `
+    <div class="card">
+      <div class="checklist-progress-head"><p style="margin:0;">打包清單</p><span>${done} / ${total} 已完成</span></div>
+      <div class="progress-track"><div class="progress-fill" style="width:${percent}%"></div></div>
+    </div>
+    <div class="card">
+      <div class="row">
+        <input id="checklistInput" placeholder="輸入要帶的物品…" value="${state.checklistDraft.text}" oninput="state.checklistDraft.text=this.value" onkeydown="if(event.key==='Enter')addChecklistItem()" />
+        <select onchange="state.checklistDraft.category=this.value">${catOptions}</select>
+      </div>
+      <button class="btn btn-primary" onclick="addChecklistItem()">＋ 新增項目</button>
+      <div class="row checklist-add-category-row">
+        <input id="newCategoryInput" placeholder="自訂新分類（例如：藥品）" onkeydown="if(event.key==='Enter')addCustomCategory()" />
+        <button class="btn-add" onclick="addCustomCategory()">＋分類</button>
+      </div>
+    </div>
+    ${catBlocks}`;
+}
+window.toggleChecklistItem = function (id) {
+  state.checklistItems = state.checklistItems.map((i) => (String(i.id) === String(id) ? { ...i, checked: !i.checked } : i));
+  saveJSON("trip-checklist", state.checklistItems); render();
+};
+window.deleteChecklistItem = function (id) {
+  state.checklistItems = state.checklistItems.filter((i) => String(i.id) !== String(id));
+  saveJSON("trip-checklist", state.checklistItems); render();
+};
+window.addChecklistItem = function () {
+  const val = (state.checklistDraft.text || "").trim();
+  if (!val) return;
+  state.checklistItems.push({ id: Date.now() + "-" + Math.random().toString(36).slice(2, 6), text: val, category: state.checklistDraft.category, checked: false });
+  state.checklistDraft.text = "";
+  saveJSON("trip-checklist", state.checklistItems); render();
+};
+window.addCustomCategory = function () {
+  const input = document.getElementById("newCategoryInput");
+  const name = input.value.trim();
+  if (!name) return;
+  const exists = [...CHECKLIST_CATEGORIES, ...state.customCategories].some((c) => c.label === name);
+  if (exists) { input.value = ""; return; }
+  const idx = state.customCategories.length;
+  const newCat = { id: "custom-" + Date.now(), label: name, icon: CATEGORY_ICON_POOL[idx % CATEGORY_ICON_POOL.length], color: CATEGORY_COLOR_POOL[idx % CATEGORY_COLOR_POOL.length] };
+  state.customCategories.push(newCat);
+  saveJSON("trip-checklist-categories", state.customCategories);
+  state.checklistDraft.category = newCat.id;
+  render();
+};
+
+/* ===================== 翻譯 API ===================== */
+async function translateViaAPI(text, langPair) {
+  try {
+    const res = await fetchWithTimeout(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langPair}&de=traveler@example.com`, 8000);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    const result = data && data.responseData && data.responseData.translatedText;
+    if (!result || /MYMEMORY WARNING/i.test(result)) return "（翻譯服務目前忙碌，請稍後再試，或使用下方常用短句）";
+    return result;
+  } catch (e) {
+    console.error("翻譯失敗：", e);
+    if (e.name === "AbortError") return "（翻譯逾時，請確認網路連線後再試一次）";
+    return "（網路異常，無法翻譯，請確認網路連線後再試）";
+  }
+}
+function speakText(text, langCode) {
+  if (!window.speechSynthesis || !text) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text); u.lang = langCode;
+  window.speechSynthesis.speak(u);
+}
+function mapMicError(err) {
+  switch (err.name) {
+    case "NotAllowedError": case "PermissionDeniedError": return "麥克風權限被拒絕。請至瀏覽器或系統設定允許存取麥克風後再試一次。";
+    case "NotFoundError": case "DevicesNotFoundError": return "找不到可用的麥克風裝置，請確認裝置已連接麥克風。";
+    case "NotReadableError": case "TrackStartError": return "麥克風目前被其他應用程式占用，請關閉相關程式後再試一次。";
+    case "SecurityError": return "此頁面未使用安全連線（HTTPS），無法啟用麥克風。";
+    default: return "無法啟動錄音功能，請稍後再試一次。";
+  }
+}
+
+/* ===================== 拍照翻譯（改用 Tesseract.js 真實 OCR＋可選翻譯語言） ===================== */
+function renderPhotoTranslate() {
+  const pt = state.photoTranslate;
+  const sourceOptions = PHOTO_OCR_LANGS.map((l) => `<option value="${l.id}" ${pt.sourceLang === l.id ? "selected" : ""}>${l.label}</option>`).join("");
+  const targetOptions = PHOTO_TARGET_LANGS.map((l) => `<option value="${l.mm}" ${pt.targetLang === l.mm ? "selected" : ""}>${l.label}</option>`).join("");
+  const langRow = `
+    <div class="row">
+      <select id="photoSourceLangSelect">${sourceOptions}</select>
+      <select id="photoTargetLangSelect">${targetOptions}</select>
+    </div>`;
+
+  if (!pt.photo) {
+    return `
+      <section class="card">
+        <p class="tool-title" style="color:var(--terracotta)">📷 拍照翻譯</p>
+        <p class="loading-hint" style="margin-bottom:6px;">先選擇照片上的文字語言，以及要翻譯成什麼語言：</p>
+        ${langRow}
+        <button class="photo-upload-btn" id="photoTranslateBtn">
+          <span class="photo-upload-icon">📷</span>
+          <span>拍攝菜單、招牌或告示牌，自動辨識文字並翻譯</span>
+        </button>
+        <input type="file" id="photoTranslateInput" accept="image/*" capture="environment" style="display:none" />
+      </section>`;
+  }
+
+  const canRetranslate = pt.ocrText && pt.status !== "ocr" && pt.status !== "translating";
+
+  return `
+    <section class="card">
+      <div class="tool-title-row">
+        <p class="tool-title" style="color:var(--terracotta)">📷 拍照翻譯</p>
+        <button class="link-btn" onclick="resetPhotoTranslate()">↺ 重新拍攝</button>
+      </div>
+      <img class="photo-translate-preview" src="${pt.photo}" alt="拍攝的照片" />
+      ${langRow}
+      <p class="loading-hint" style="margin-bottom:8px;">變更「照片語言」需重新拍攝才會生效；變更「翻譯成」可直接按下方按鈕重新翻譯。</p>
+      ${canRetranslate ? `<button class="btn-add" style="width:100%;margin-bottom:8px;" onclick="retranslatePhoto()">🔁 用新語言重新翻譯</button>` : ""}
+      ${pt.status === "ocr" ? `<div class="spinner-row"><span class="spinner"></span><p id="ocrProgressText">文字辨識中…</p></div>` : ""}
+      ${pt.status === "translating" ? `<div class="spinner-row"><span class="spinner"></span><p>翻譯中…</p></div>` : ""}
+      ${pt.status === "error" ? `<div class="error-banner light"><p class="error-title">無法完成辨識／翻譯</p><p class="error-tip">${escapeHtml(pt.errorMsg)}</p></div>` : ""}
+      ${pt.status === "done" ? `
+        <div class="result-card original">
+          <p class="result-label">📄 原文（OCR 辨識文字）</p>
+          <p class="result-text">${escapeHtml(pt.ocrText)}</p>
+        </div>
+        <div class="result-card translated">
+          <p class="result-label" style="color:var(--turquoise)">🌐 翻譯結果</p>
+          <p class="result-text">${escapeHtml(pt.translated)}</p>
+        </div>` : ""}
+    </section>`;
+}
+window.resetPhotoTranslate = function () {
+  state.photoTranslate = { photo: null, status: "idle", sourceLang: state.photoTranslate.sourceLang, ocrSourceMM: state.photoTranslate.ocrSourceMM, targetLang: state.photoTranslate.targetLang, ocrText: "", translated: "", errorMsg: "" };
+  render();
+};
+async function runPhotoOCRAndTranslate() {
+  const pt = state.photoTranslate;
+  if (!pt.photo) return;
+  pt.status = "ocr"; pt.ocrText = ""; pt.translated = ""; pt.errorMsg = "";
+  render();
+
+  if (typeof Tesseract === "undefined") {
+    pt.status = "error";
+    pt.errorMsg = "文字辨識套件（Tesseract.js）載入失敗，請確認網路連線後重新整理頁面再試一次。";
+    render(); return;
+  }
+  const srcLang = PHOTO_OCR_LANGS.find((l) => l.id === pt.sourceLang) || PHOTO_OCR_LANGS[0];
+  try {
+    const result = await Tesseract.recognize(pt.photo, srcLang.id, {
+      logger: (m) => {
+        const el = document.getElementById("ocrProgressText");
+        if (!el) return;
+        if (m.status === "recognizing text") el.textContent = `文字辨識中… ${Math.round((m.progress || 0) * 100)}%`;
+        else if (m.status) el.textContent = `準備辨識引擎…（${m.status}）`;
+      },
+    });
+    const text = (result && result.data && result.data.text ? result.data.text : "").trim();
+    if (!text) {
+      pt.status = "error";
+      pt.errorMsg = "沒有辨識出任何文字，請確認照片夠清晰、文字夠大、對焦正確，重新拍攝再試一次。";
+      render(); return;
+    }
+    pt.ocrText = text;
+    pt.ocrSourceMM = srcLang.mm;
+    await retranslatePhoto();
+  } catch (e) {
+    console.error("OCR 失敗：", e);
+    pt.status = "error";
+    pt.errorMsg = "文字辨識過程發生錯誤，請重新整理頁面，或換一張較清晰、光線較好的照片再試一次。";
+    render();
+  }
+}
+async function retranslatePhoto() {
+  const pt = state.photoTranslate;
+  if (!pt.ocrText) return;
+  pt.status = "translating"; render();
+  const result = await translateViaAPI(pt.ocrText, `${pt.ocrSourceMM}|${pt.targetLang}`);
+  pt.translated = result;
+  pt.status = "done";
+  render();
+}
+window.retranslatePhoto = retranslatePhoto;
+function wirePhotoTranslateEvents() {
+  const btn = document.getElementById("photoTranslateBtn");
+  const input = document.getElementById("photoTranslateInput");
+  if (btn) btn.onclick = () => input.click();
+  if (input) input.onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      state.photoTranslate.photo = reader.result;
+      state.photoTranslate.ocrText = ""; state.photoTranslate.translated = ""; state.photoTranslate.errorMsg = "";
+      runPhotoOCRAndTranslate();
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+  const srcSel = document.getElementById("photoSourceLangSelect");
+  if (srcSel) srcSel.onchange = (e) => { state.photoTranslate.sourceLang = e.target.value; };
+  const tgtSel = document.getElementById("photoTargetLangSelect");
+  if (tgtSel) tgtSel.onchange = (e) => { state.photoTranslate.targetLang = e.target.value; };
+}
+
+/* ===================== 即時口語翻譯（修正：拿掉多餘的預先 getUserMedia，避免麥克風被搶占） ===================== */
+function renderVoiceTranslate() {
+  const vt = state.voiceTranslate;
+  const source = vt.direction === "zh-tr" ? SPEECH_LANGS.zh : SPEECH_LANGS.tr;
+  const target = vt.direction === "zh-tr" ? SPEECH_LANGS.tr : SPEECH_LANGS.zh;
+  const err = vt.errorType ? ERROR_COPY[vt.errorType] : null;
+  return `
+    <section class="card dark">
+      <div class="tool-title-row">
+        <p class="tool-title gold">🎙️ 即時口語翻譯</p>
+        <button class="lang-switch" onclick="toggleVoiceDirection()">${source.label} ⇄ ${target.label}</button>
+      </div>
+      <div class="mic-wrap">
+        <button class="mic-btn ${vt.phase}" onclick="handleVoiceMicClick()">
+          ${vt.phase === "requesting" || vt.phase === "processing" ? '<span class="spinner light"></span>' :
+            vt.phase === "listening" ? '<span class="wave-bars"><span></span><span></span><span></span><span></span><span></span></span>' :
+            vt.phase === "error" ? "🚫" : "🎤"}
+        </button>
+        <p class="mic-hint">
+          ${vt.phase === "idle" ? `按一下，說出${source.label}` : ""}
+          ${vt.phase === "requesting" ? "請求麥克風權限中…" : ""}
+          ${vt.phase === "listening" ? "聆聽中，說完會自動翻譯…（再按一次可提早結束）" : ""}
+          ${vt.phase === "processing" ? "翻譯中…" : ""}
+          ${vt.phase === "error" ? "點麥克風圖示可重新嘗試" : ""}
+        </p>
+      </div>
+      ${err ? `<div class="error-banner"><p class="error-title">${err.title}</p><p class="error-tip">${err.tip}</p></div>` : ""}
+      ${(vt.transcript || vt.translated) ? `
+        <div class="voice-result">
+          <div class="voice-line"><p class="voice-label">你說（${source.label}）</p><p class="voice-text">${vt.transcript}</p></div>
+          <div class="voice-line highlight">
+            <p class="voice-label gold">翻譯結果（${target.label}）</p><p class="voice-text">${vt.translated}</p>
+            ${vt.translated ? `<button class="speak-btn" id="voiceSpeakBtn">🔊</button>` : ""}
+          </div>
+        </div>` : ""}
+      <p class="sandbox-hint">提示：iOS Safari／App 內建瀏覽器不支援語音辨識；若在 CodePen 編輯器分割預覽窗測試無反應，請改用「Full Page」或正式發佈的網址。</p>
+    </section>`;
+}
+window.toggleVoiceDirection = function () {
+  const vt = state.voiceTranslate;
+  vt.direction = vt.direction === "zh-tr" ? "tr-zh" : "zh-tr";
+  vt.transcript = ""; vt.translated = ""; vt.phase = "idle"; vt.errorType = null;
+  render();
+};
+window.handleVoiceMicClick = function () {
+  if (state.voiceTranslate.phase === "listening") { stopVoiceListening(); return; }
+  if (state.voiceTranslate.phase === "requesting" || state.voiceTranslate.phase === "processing") return;
+  startVoiceListening();
+};
+function startVoiceListening() {
+  const vt = state.voiceTranslate;
+  vt.transcript = ""; vt.translated = ""; vt.errorType = null;
+
+  if (!window.isSecureContext) { vt.phase = "error"; vt.errorType = "insecure-context"; render(); return; }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { vt.phase = "error"; vt.errorType = "not-supported"; render(); return; }
+
+  const source = vt.direction === "zh-tr" ? SPEECH_LANGS.zh : SPEECH_LANGS.tr;
+  const target = vt.direction === "zh-tr" ? SPEECH_LANGS.tr : SPEECH_LANGS.zh;
+  const langPair = vt.direction === "zh-tr" ? "zh-TW|tr" : "tr|zh-TW";
+
+  const recognition = new SR();
+  recognition.lang = source.code;
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+
+  recognition.onstart = () => { vt.phase = "listening"; render(); };
+  recognition.onerror = (e) => {
+    console.error("語音辨識錯誤：", e.error);
+    vt.phase = "error";
+    vt.errorType = e.error === "not-allowed" || e.error === "service-not-allowed" ? "permission-denied"
+      : e.error === "no-speech" ? "no-speech" : e.error === "audio-capture" ? "no-mic"
+      : e.error === "network" ? "network" : "unknown";
+    render();
+  };
+  recognition.onresult = async (e) => {
+    const text = e.results[0][0].transcript;
+    vt.transcript = text; vt.phase = "processing"; render();
+    const result = await translateViaAPI(text, langPair);
+    vt.translated = result; vt.phase = "idle"; render();
+    speakText(result, target.code);
+  };
+  recognition.onend = () => { if (vt.phase === "listening" || vt.phase === "requesting") { vt.phase = "idle"; render(); } };
+
+  vt.phase = "requesting"; render();
+  voiceRecognition = recognition;
+  try {
+    recognition.start(); // 直接讓 SpeechRecognition 自己處理麥克風權限，不再重複預先請求
+  } catch (err) {
+    console.error("recognition.start 失敗：", err);
+    vt.phase = "error"; vt.errorType = "unknown"; render();
+  }
+}
+function stopVoiceListening() { if (voiceRecognition) { try { voiceRecognition.stop(); } catch (e) {} } }
+
+/* ===================== 錄音備忘（仍使用 getUserMedia，因為需要實際錄下音檔） ===================== */
+function renderVoiceMemo() {
+  const vm = state.voiceMemo;
+  return `
+    <section class="card">
+      <p class="tool-title" style="color:var(--turquoise)">🎙️ 錄音備忘（例如錄下導遊解說，之後回放）</p>
+      <div class="mic-wrap small">
+        <button class="mic-btn small ${vm.recState}" onclick="handleVoiceMemoClick()">
+          ${vm.recState === "recording" ? '<span class="wave-bars"><span></span><span></span><span></span><span></span><span></span></span>' : vm.recState === "error" ? "🚫" : "🎤"}
+        </button>
+        <p class="mic-hint">
+          ${vm.recState === "idle" ? "按下開始錄音" : ""}
+          ${vm.recState === "recording" ? `錄音中… ${formatSeconds(vm.seconds)}（再按一次停止）` : ""}
+          ${vm.recState === "recorded" ? "錄音完成" : ""}
+          ${vm.recState === "error" ? "點麥克風重試" : ""}
+        </p>
+      </div>
+      ${vm.recState === "error" && vm.errorMsg ? `<div class="error-banner light"><p class="error-title">無法使用麥克風</p><p class="error-tip">${vm.errorMsg}</p></div>` : ""}
+      ${vm.recState === "recorded" && vm.audioURL ? `
+        <audio controls src="${vm.audioURL}" style="width:100%;margin-top:10px;"></audio>
+        <button class="link-btn" onclick="resetVoiceMemo()">↺ 重新錄音</button>` : ""}
+    </section>`;
+}
+function formatSeconds(s) { const m = String(Math.floor(s / 60)).padStart(2, "0"); const ss = String(s % 60).padStart(2, "0"); return `${m}:${ss}`; }
+window.handleVoiceMemoClick = function () {
+  if (state.voiceMemo.recState === "recording") { stopVoiceMemo(); return; }
+  startVoiceMemo();
+};
+async function startVoiceMemo() {
+  const vm = state.voiceMemo; vm.errorMsg = ""; vm.audioURL = null;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    voiceMemoStream = stream;
+    const recorder = new MediaRecorder(stream);
+    voiceMemoRecorder = recorder; voiceMemoChunks = [];
+    recorder.ondataavailable = (e) => { if (e.data.size > 0) voiceMemoChunks.push(e.data); };
+    recorder.onstop = () => {
+      const blob = new Blob(voiceMemoChunks, { type: "audio/webm" });
+      vm.audioURL = URL.createObjectURL(blob); vm.recState = "recorded";
+      voiceMemoStream.getTracks().forEach((t) => t.stop());
+      clearInterval(voiceMemoTimer); render();
+    };
+    recorder.start(); vm.recState = "recording"; vm.seconds = 0; render();
+    voiceMemoTimer = setInterval(() => { vm.seconds++; render(); }, 1000);
+  } catch (err) { vm.errorMsg = mapMicError(err); vm.recState = "error"; render(); }
+}
+function stopVoiceMemo() { if (voiceMemoRecorder) voiceMemoRecorder.stop(); }
+window.resetVoiceMemo = function () { state.voiceMemo = { recState: "idle", errorMsg: "", audioURL: null, seconds: 0 }; render(); };
+
+/* ===================== 文字翻譯／常用短句 ===================== */
+function renderTextTranslate() {
+  const tt = state.textTranslate;
+  const historyHtml = tt.history.map((h) => `
+    <div class="text-history-item">
+      <p class="history-zh">${h.zh}</p><p class="history-tr">${h.tr}</p>
+      ${h.pron ? `<p class="history-pron">發音參考：${h.pron}</p>` : ""}
+    </div>`).join("");
+  return `
+    <section class="card">
+      <p class="tool-title" style="color:var(--turquoise)">🌐 文字翻譯（中文 → 土耳其語）</p>
+      <div class="row">
+        <input id="textTranslateInput" placeholder="輸入想說的中文…" value="${tt.input}" oninput="state.textTranslate.input=this.value" onkeydown="if(event.key==='Enter')submitTextTranslate()" />
+        <button class="btn-add" onclick="submitTextTranslate()">➤</button>
+      </div>
+      ${tt.loading ? '<p class="loading-hint">翻譯中…</p>' : ""}
+      <div class="text-history">${historyHtml}</div>
+    </section>
+    <section class="card">
+      <p class="tool-title" style="color:var(--turquoise)">常用短句（點一下直接翻譯）</p>
+      <div class="phrase-grid">
+        ${PHRASES.map((p, i) => `
+          <button class="phrase-card" onclick="translatePhrase(${i})">
+            <p class="phrase-zh">${p.zh}</p><p class="phrase-tr">${p.tr}</p><p class="phrase-pron">${p.pron}</p>
+          </button>`).join("")}
+      </div>
+    </section>`;
+}
+window.submitTextTranslate = async function () {
+  const tt = state.textTranslate; const text = (tt.input || "").trim();
+  if (!text) return;
+  tt.loading = true; render();
+  const localHit = PHRASES.find((p) => p.zh === text);
+  const result = await translateViaAPI(text, "zh-TW|tr");
+  tt.history.unshift({ zh: text, tr: result, pron: localHit ? localHit.pron : undefined });
+  tt.loading = false; tt.input = ""; render();
+};
+window.translatePhrase = function (i) {
+  const p = PHRASES[i];
+  state.textTranslate.history.unshift({ zh: p.zh, tr: p.tr, pron: p.pron });
+  render();
+};
+
+/* ===================== 匯率換算 ===================== */
+function currencyRowsHTML() {
+  const amountUSD = (parseFloat(state.amount) || 0) / (state.rates[state.base] || 1);
+  return CURRENCIES.filter((c) => c !== state.base).map((c) => {
+    const value = amountUSD * (state.rates[c] || 0);
+    const meta = CURRENCY_META[c];
+    const formatted = value.toLocaleString("en-US", { minimumFractionDigits: meta.decimals, maximumFractionDigits: meta.decimals });
+    return `<button class="currency-row" onclick="switchBase('${c}', ${value})"><span class="currency-left"><span class="code">${c}</span>${meta.name}</span><span class="currency-val">${meta.symbol} ${formatted}</span></button>`;
+  }).join("");
+}
+function updateCurrencyRows() {
+  const container = document.getElementById("currencyRows");
+  if (container) container.innerHTML = currencyRowsHTML();
+}
+function renderCurrencySection() {
+  const options = CURRENCIES.map((c) => `<option value="${c}" ${state.base === c ? "selected" : ""}>${c}</option>`).join("");
+  return `
+    <div class="card">
+      <h2>💱 匯率換算 <span class="rate-badge ${state.rateSource === "live" ? "live" : ""}">${state.rateLoading ? "更新中…" : state.rateSource === "live" ? "即時匯率" : "離線估算匯率"}</span></h2>
+      <div class="row">
+        <input id="currencyAmountInput" type="text" inputmode="decimal" value="${state.amount}" oninput="state.amount=this.value; updateCurrencyRows();" placeholder="輸入金額" />
+        <select onchange="state.base=this.value; render();">${options}</select>
+      </div>
+      <div id="currencyRows">${currencyRowsHTML()}</div>
+      <div class="rate-meta-row">
+        <span class="rate-updated">${state.rateUpdatedAt ? "最後更新：" + state.rateUpdatedAt : "尚未取得即時匯率"}</span>
+        <button class="refresh-btn" onclick="fetchLiveRates()">🔄 重新整理匯率</button>
+      </div>
+      <p style="font-size:10px;color:#94897a;margin-top:6px;">點任一貨幣可切換為輸入基準。匯率僅供參考，實際請以當地兌換或刷卡當下匯率為準。</p>
+    </div>`;
+}
+window.switchBase = function (code, value) {
+  state.base = code;
+  state.amount = value > 0 ? value.toFixed(CURRENCY_META[code].decimals) : "0";
+  render();
+};
+window.fetchLiveRates = async function () {
+  state.rateLoading = true;
+  if (state.tab === "tools") render();
+  try {
+    const res = await fetchWithTimeout(RATE_API_URL, 8000);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    if (data && data.result === "success" && data.rates) {
+      const merged = { ...MOCK_RATES_USD_BASE };
+      CURRENCIES.forEach((c) => { if (data.rates[c]) merged[c] = data.rates[c]; });
+      state.rates = merged; state.rateSource = "live";
+      state.rateUpdatedAt = new Date().toLocaleString("zh-TW", { hour12: false });
+    }
+  } catch (e) { console.error("匯率 API 讀取失敗，維持離線估算匯率：", e); }
+  finally { state.rateLoading = false; if (state.tab === "tools") render(); }
+};
+
+/* ===================== 工具分頁組合 ===================== */
+function renderTools() {
+  return renderPhotoTranslate() + renderVoiceTranslate() + renderVoiceMemo() + renderTextTranslate() + renderCurrencySection();
+}
+function wireToolsEvents() {
+  wirePhotoTranslateEvents();
+  const speakBtn = document.getElementById("voiceSpeakBtn");
+  if (speakBtn) speakBtn.onclick = () => {
+    const vt = state.voiceTranslate;
+    const target = vt.direction === "zh-tr" ? SPEECH_LANGS.tr : SPEECH_LANGS.zh;
+    speakText(vt.translated, target.code);
+  };
+}
+
+/* ===================== 須知 ===================== */
+function renderNotes() {
+  return NOTES.map((n) => `
+    <div class="card">
+      <h2 style="color:var(--terracotta);">${n.icon} ${n.title}</h2>
+      <ul class="note-list">${n.items.map((i) => `<li>${i}</li>`).join("")}</ul>
+    </div>`).join("");
+}
+
+/* ===================== 啟動 ===================== */
+render();
+fetchLiveRates();
+fetchWeather();
