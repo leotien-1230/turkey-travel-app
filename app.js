@@ -146,10 +146,9 @@ const ERROR_COPY = {
   "insecure-context": { title: "需要安全連線（HTTPS）", tip: "麥克風僅能在 https:// 開頭的網址中使用，目前的連線不支援。" },
   "no-speech": { title: "沒有偵測到聲音", tip: "請靠近麥克風，確認沒有靜音，再按一次重新錄音。" },
   "network": { title: "語音辨識連線失敗", tip: "請確認網路連線穩定後再試一次。" },
-  "unknown": { title: "麥克風目前無法使用", tip: "請重新整理頁面再試一次；若仍無反應，可改用下方文字翻譯。若你是在 CodePen 編輯器的分割預覽窗測試，麥克風權限可能被 iframe 擋掉，請改用「Full Page」或正式發佈的網址測試。" },
+  "unknown": { title: "麥克風目前無法使用", tip: "請重新整理頁面再試一次；若你是在 CodePen 編輯器的分割預覽窗測試，麥克風權限可能被 iframe 擋掉，請改用「Full Page」或正式發佈的網址測試。" },
 };
 
-// 拍照翻譯：OCR 來源語言（Tesseract.js 語言代碼）與可選翻譯目標語言
 const PHOTO_OCR_LANGS = [
   { id: "tur", mm: "tr", label: "土耳其文" },
   { id: "eng", mm: "en-GB", label: "英文" },
@@ -182,6 +181,45 @@ function saveJSON(key, value) {
 function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
+// 清除 OCR 結果中的控制字元／亂碼符號，收斂多餘空白
+function cleanOcrText(raw) {
+  return String(raw)
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+// 拍照翻譯前處理：放大過小的照片、轉灰階並強化對比，明顯提升 OCR 準確度
+function preprocessImageForOCR(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const scale = img.width < 1000 ? Math.min(2, 1000 / img.width) : 1;
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        const imageData = ctx.getImageData(0, 0, w, h);
+        const d = imageData.data;
+        for (let i = 0; i < d.length; i += 4) {
+          const gray = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+          const contrasted = Math.min(255, Math.max(0, (gray - 128) * 1.4 + 128));
+          d[i] = d[i + 1] = d[i + 2] = contrasted;
+        }
+        ctx.putImageData(imageData, 0, 0);
+        resolve(canvas.toDataURL("image/png"));
+      } catch (e) {
+        console.warn("圖片前處理失敗，改用原圖：", e);
+        resolve(dataUrl);
+      }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
 
 /* ===================== 狀態 ===================== */
 const state = {
@@ -195,7 +233,7 @@ const state = {
   checklistItems: loadJSON("trip-checklist", DEFAULT_CHECKLIST_ITEMS),
   customCategories: loadJSON("trip-checklist-categories", []),
   checklistDraft: { text: "", category: "other" },
-  photoTranslate: { photo: null, status: "idle", sourceLang: "tur", ocrSourceMM: "tr", targetLang: "zh-TW", ocrText: "", translated: "", errorMsg: "" },
+  photoTranslate: { photo: null, status: "idle", sourceLang: "tur", ocrSourceMM: "tr", targetLang: "zh-TW", ocrText: "", translated: "", errorMsg: "", showManual: false, manualText: "" },
   voiceTranslate: { direction: "zh-tr", phase: "idle", errorType: null, transcript: "", translated: "" },
   voiceMemo: { recState: "idle", errorMsg: "", audioURL: null, seconds: 0 },
   textTranslate: { input: "", history: [], loading: false },
@@ -800,7 +838,7 @@ function mapMicError(err) {
   }
 }
 
-/* ===================== 拍照翻譯（改用 Tesseract.js 真實 OCR＋可選翻譯語言） ===================== */
+/* ===================== 拍照翻譯（前處理＋清理文字＋手動輸入備援） ===================== */
 function renderPhotoTranslate() {
   const pt = state.photoTranslate;
   const sourceOptions = PHOTO_OCR_LANGS.map((l) => `<option value="${l.id}" ${pt.sourceLang === l.id ? "selected" : ""}>${l.label}</option>`).join("");
@@ -809,6 +847,15 @@ function renderPhotoTranslate() {
     <div class="row">
       <select id="photoSourceLangSelect">${sourceOptions}</select>
       <select id="photoTargetLangSelect">${targetOptions}</select>
+    </div>`;
+
+  const manualBox = `
+    <div class="manual-ocr-box">
+      <button class="link-btn" onclick="toggleManualOcr()">${pt.showManual ? "▲ 收起手動輸入" : "✏️ 辨識結果不準確？點此手動輸入文字"}</button>
+      ${pt.showManual ? `
+        <textarea id="manualOcrInput" placeholder="請直接輸入或貼上照片中的文字…" rows="3">${escapeHtml(pt.manualText)}</textarea>
+        <button class="btn btn-primary" style="margin-top:6px;" onclick="submitManualOcr()">用這段文字翻譯</button>
+      ` : ""}
     </div>`;
 
   if (!pt.photo) {
@@ -821,7 +868,9 @@ function renderPhotoTranslate() {
           <span class="photo-upload-icon">📷</span>
           <span>拍攝菜單、招牌或告示牌，自動辨識文字並翻譯</span>
         </button>
+        <p class="photo-tip">📌 拍攝小技巧：光線充足、鏡頭正對文字（避免斜角）、讓文字盡量佔滿畫面、避免反光，辨識效果會好很多。</p>
         <input type="file" id="photoTranslateInput" accept="image/*" capture="environment" style="display:none" />
+        ${manualBox}
       </section>`;
   }
 
@@ -842,19 +891,34 @@ function renderPhotoTranslate() {
       ${pt.status === "error" ? `<div class="error-banner light"><p class="error-title">無法完成辨識／翻譯</p><p class="error-tip">${escapeHtml(pt.errorMsg)}</p></div>` : ""}
       ${pt.status === "done" ? `
         <div class="result-card original">
-          <p class="result-label">📄 原文（OCR 辨識文字）</p>
+          <p class="result-label">📄 原文（OCR 辨識文字，可能有誤，請自行核對）</p>
           <p class="result-text">${escapeHtml(pt.ocrText)}</p>
         </div>
         <div class="result-card translated">
           <p class="result-label" style="color:var(--turquoise)">🌐 翻譯結果</p>
           <p class="result-text">${escapeHtml(pt.translated)}</p>
         </div>` : ""}
+      ${manualBox}
     </section>`;
 }
 window.resetPhotoTranslate = function () {
-  state.photoTranslate = { photo: null, status: "idle", sourceLang: state.photoTranslate.sourceLang, ocrSourceMM: state.photoTranslate.ocrSourceMM, targetLang: state.photoTranslate.targetLang, ocrText: "", translated: "", errorMsg: "" };
+  const pt = state.photoTranslate;
+  state.photoTranslate = { photo: null, status: "idle", sourceLang: pt.sourceLang, ocrSourceMM: pt.ocrSourceMM, targetLang: pt.targetLang, ocrText: "", translated: "", errorMsg: "", showManual: false, manualText: "" };
   render();
 };
+window.toggleManualOcr = function () { state.photoTranslate.showManual = !state.photoTranslate.showManual; render(); };
+window.submitManualOcr = async function () {
+  const el = document.getElementById("manualOcrInput");
+  const text = (el ? el.value : "").trim();
+  if (!text) return;
+  const pt = state.photoTranslate;
+  pt.manualText = text;
+  pt.ocrText = text;
+  const srcLang = PHOTO_OCR_LANGS.find((l) => l.id === pt.sourceLang) || PHOTO_OCR_LANGS[0];
+  pt.ocrSourceMM = srcLang.mm;
+  await retranslatePhoto();
+};
+
 async function runPhotoOCRAndTranslate() {
   const pt = state.photoTranslate;
   if (!pt.photo) return;
@@ -863,12 +927,13 @@ async function runPhotoOCRAndTranslate() {
 
   if (typeof Tesseract === "undefined") {
     pt.status = "error";
-    pt.errorMsg = "文字辨識套件（Tesseract.js）載入失敗，請確認網路連線後重新整理頁面再試一次。";
+    pt.errorMsg = "文字辨識套件（Tesseract.js）載入失敗，請確認網路連線後重新整理頁面再試一次；也可以下方「手動輸入文字」直接翻譯。";
     render(); return;
   }
   const srcLang = PHOTO_OCR_LANGS.find((l) => l.id === pt.sourceLang) || PHOTO_OCR_LANGS[0];
   try {
-    const result = await Tesseract.recognize(pt.photo, srcLang.id, {
+    const processedImage = await preprocessImageForOCR(pt.photo);
+    const result = await Tesseract.recognize(processedImage, srcLang.id, {
       logger: (m) => {
         const el = document.getElementById("ocrProgressText");
         if (!el) return;
@@ -876,10 +941,11 @@ async function runPhotoOCRAndTranslate() {
         else if (m.status) el.textContent = `準備辨識引擎…（${m.status}）`;
       },
     });
-    const text = (result && result.data && result.data.text ? result.data.text : "").trim();
+    const rawText = result && result.data && result.data.text ? result.data.text : "";
+    const text = cleanOcrText(rawText);
     if (!text) {
       pt.status = "error";
-      pt.errorMsg = "沒有辨識出任何文字，請確認照片夠清晰、文字夠大、對焦正確，重新拍攝再試一次。";
+      pt.errorMsg = "沒有辨識出任何文字，可能是照片語言選錯、文字太小、角度傾斜或反光。可以下方「手動輸入文字」直接翻譯。";
       render(); return;
     }
     pt.ocrText = text;
@@ -888,7 +954,7 @@ async function runPhotoOCRAndTranslate() {
   } catch (e) {
     console.error("OCR 失敗：", e);
     pt.status = "error";
-    pt.errorMsg = "文字辨識過程發生錯誤，請重新整理頁面，或換一張較清晰、光線較好的照片再試一次。";
+    pt.errorMsg = "文字辨識過程發生錯誤。可以下方「手動輸入文字」直接翻譯，或換一張較清晰、光線較好的照片重新拍攝。";
     render();
   }
 }
@@ -912,7 +978,7 @@ function wirePhotoTranslateEvents() {
     const reader = new FileReader();
     reader.onload = () => {
       state.photoTranslate.photo = reader.result;
-      state.photoTranslate.ocrText = ""; state.photoTranslate.translated = ""; state.photoTranslate.errorMsg = "";
+      state.photoTranslate.ocrText = ""; state.photoTranslate.translated = ""; state.photoTranslate.errorMsg = ""; state.photoTranslate.showManual = false;
       runPhotoOCRAndTranslate();
     };
     reader.readAsDataURL(file);
@@ -924,7 +990,7 @@ function wirePhotoTranslateEvents() {
   if (tgtSel) tgtSel.onchange = (e) => { state.photoTranslate.targetLang = e.target.value; };
 }
 
-/* ===================== 即時口語翻譯（修正：拿掉多餘的預先 getUserMedia，避免麥克風被搶占） ===================== */
+/* ===================== 即時口語翻譯 ===================== */
 function renderVoiceTranslate() {
   const vt = state.voiceTranslate;
   const source = vt.direction === "zh-tr" ? SPEECH_LANGS.zh : SPEECH_LANGS.tr;
@@ -1011,7 +1077,7 @@ function startVoiceListening() {
   vt.phase = "requesting"; render();
   voiceRecognition = recognition;
   try {
-    recognition.start(); // 直接讓 SpeechRecognition 自己處理麥克風權限，不再重複預先請求
+    recognition.start();
   } catch (err) {
     console.error("recognition.start 失敗：", err);
     vt.phase = "error"; vt.errorType = "unknown"; render();
@@ -1019,7 +1085,7 @@ function startVoiceListening() {
 }
 function stopVoiceListening() { if (voiceRecognition) { try { voiceRecognition.stop(); } catch (e) {} } }
 
-/* ===================== 錄音備忘（仍使用 getUserMedia，因為需要實際錄下音檔） ===================== */
+/* ===================== 錄音備忘 ===================== */
 function renderVoiceMemo() {
   const vm = state.voiceMemo;
   return `
